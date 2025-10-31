@@ -1,0 +1,44 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Platform-specific files
+.DS_Store
+
+# Compiled output and packages
+build
+dist
+data-output
+
+# Tests
+coverage
+reports
+
+# Dependency directories
+node_modules
+
+# Environment variables
+.env
+
+# IDE files
+.idea/
+.context/
+
+# Docs
+docs_html/
+docs_mdx/
+
+#Binaries
+bin/linux_x64/
+bin/darwin_arm64/
+bin/win32_x64/
+
+# Yarn 4
+.yarn/
+.yarnrc.yml
+docs_md
