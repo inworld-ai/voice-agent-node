@@ -41,9 +41,10 @@ export class TranscriptExtractorNode extends CustomNode {
     const interactionComplete =
       (metadata.interaction_complete as boolean) || false;
     const iteration = (metadata.iteration as number) || 1;
+    const interactionId = String(metadata.interactionId || iteration);
 
     console.log(
-      `[TranscriptExtractor] Session: ${sessionId}, Iteration: ${iteration}, ` +
+      `[TranscriptExtractor] Session: ${sessionId}, InteractionId: ${interactionId}, Iteration: ${iteration}, ` +
         `Complete: ${interactionComplete}, Transcript: "${transcript}"`,
     );
 
@@ -51,7 +52,7 @@ export class TranscriptExtractorNode extends CustomNode {
     // Set isInterrupted based on auto-interruption config (matches InteractionInfoNode behavior)
     return {
       sessionId,
-      interactionId: String(iteration),
+      interactionId: interactionId,
       text: transcript,
       isInterrupted: !this.disableAutoInterruption,
     };

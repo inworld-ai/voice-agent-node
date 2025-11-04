@@ -35,10 +35,11 @@ export class InteractionInfoNode extends CustomNode {
     console.log('InteractionInfoNode with text: ', text);
 
     const sessionId = context.getDatastore().get('sessionId') as string;
+    const metadata = streamWithMetadata.getMetadata();
 
     return {
       sessionId,
-      interactionId: String(streamWithMetadata.getMetadata().iteration || 1),
+      interactionId: String(metadata.interactionId || metadata.iteration || 1),
       text: text,
       isInterrupted: !this.disableAutoInterruption,
     };

@@ -374,8 +374,9 @@ export class MessageHandler {
         Custom: async (customData: GraphTypes.Custom<any>) => {
           // Check if it's SpeechCompleteEvent (from SpeechCompleteNotifierNode - VAD based)
           if (customData.type === 'SPEECH_COMPLETE') {
-            // Use iteration as interactionId to match what InteractionInfoNode will use
-            const effectiveInteractionId = String(customData.iteration);
+            // Use the full interactionId from the event (compound ID like "abc123#1")
+            const effectiveInteractionId =
+              customData.interactionId || String(customData.iteration);
             console.log(
               `User speech complete (VAD) - Interaction: ${effectiveInteractionId}, ` +
                 `Iteration: ${customData.iteration}, Samples: ${customData.totalSamples}, Endpointing Latency: ${customData.endpointingLatencyMs}ms`,
