@@ -48,19 +48,14 @@ export class InteractionQueueNode extends CustomNode {
 
     // Get all keys and categorize them
     const allKeys = dataStore.keys();
-    const queuedIds: number[] = [];
+    const queuedIds: string[] = [];
     let completedCount = 0;
     let runningCount = 0;
 
     for (const key of allKeys) {
       if (key.startsWith(QUEUED_PREFIX)) {
         const idStr = key.substring(QUEUED_PREFIX.length);
-        const id = parseInt(idStr, 10);
-        if (!isNaN(id)) {
-          queuedIds.push(id);
-        } else {
-          console.warn(`Invalid queued key format: ${key}`);
-        }
+        queuedIds.push(idStr);
       } else if (key.startsWith(COMPLETED_PREFIX)) {
         completedCount++;
       } else if (key.startsWith(RUNNING_PREFIX)) {
@@ -68,8 +63,16 @@ export class InteractionQueueNode extends CustomNode {
       }
     }
 
-    // Sort queued IDs to process in order
-    queuedIds.sort((a, b) => a - b);
+    // Sort queued IDs - extract iteration number for sorting
+    queuedIds.sort((a, b) => {
+      const getIteration = (id: string): number => {
+        const hashIndex = id.indexOf('#');
+        if (hashIndex === -1) return 0;
+        const iter = parseInt(id.substring(hashIndex + 1), 10);
+        return isNaN(iter) ? 0 : iter;
+      };
+      return getIteration(a) - getIteration(b);
+    });
 
     console.log(
       `InteractionQueue: State - ${queuedIds.length} queued, ${completedCount} completed, ${runningCount} running`,
@@ -133,7 +136,7 @@ export class InteractionQueueNode extends CustomNode {
       return {
         text: queuedText,
         sessionId: sessionId,
-        interactionId: nextId.toString(),
+        interactionId: nextId,
       } as TextInput;
     } else {
       // An interaction is currently running, wait for it to complete

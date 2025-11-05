@@ -37,17 +37,28 @@ export class SpeechCompleteNotifierNode extends CustomNode<
     const sessionId = context.getDatastore().get('sessionId') as string;
     const iteration = (metadata.iteration as number) || 0;
 
+    // Get interactionId from metadata (compound ID like "abc123#1"), fallback to iteration
+    const interactionId =
+      (metadata.interactionId as string) || String(iteration);
+
+    // Handle both field names for compatibility (total_samples for VAD, total_audio_samples for AssemblyAI)
+    const totalSamples =
+      (metadata.total_audio_samples as number) ||
+      (metadata.total_samples as number) ||
+      0;
+
     console.log(
       `[SpeechCompleteNotifier] User speech complete - Session: ${sessionId}, ` +
-        `Iteration: ${iteration}, Samples: ${metadata.total_samples}`,
+        `InteractionId: ${interactionId}, Iteration: ${iteration}, Samples: ${totalSamples}, Latency: ${metadata.endpointing_latency_ms}ms`,
     );
 
     // Create and return the notification event for the client
     return {
       type: 'SPEECH_COMPLETE',
       sessionId,
+      interactionId,
       iteration,
-      totalSamples: metadata.total_samples as number,
+      totalSamples,
       sampleRate: metadata.sample_rate as number,
       endpointingLatencyMs: metadata.endpointing_latency_ms as number,
       speechDetected: metadata.speech_detected as boolean,
@@ -68,6 +79,7 @@ export class SpeechCompleteNotifierNode extends CustomNode<
 export interface SpeechCompleteEvent {
   type: 'SPEECH_COMPLETE';
   sessionId: string;
+  interactionId: string;
   iteration: number;
   totalSamples: number;
   sampleRate: number;

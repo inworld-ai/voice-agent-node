@@ -9,9 +9,9 @@
   dependencies:
     "@jridgewell/trace-mapping" "0.3.9"
 
-"@inworld/runtime@https://assets.inworld.ai/node-packages/inworld-runtime-0.8.0-rc.10.tgz":
-  version "0.8.0-rc.10"
-  resolved "https://assets.inworld.ai/node-packages/inworld-runtime-0.8.0-rc.10.tgz#cc3310ef61209bcb9814acf260db4eb0568bde3e"
+"@inworld/runtime@https://assets.inworld.ai/node-packages/inworld-runtime-0.8.0-rc.12.tgz":
+  version "0.8.0-rc.12"
+  resolved "https://assets.inworld.ai/node-packages/inworld-runtime-0.8.0-rc.12.tgz#cf5037a588de160185e5ce6f6f278bd21212f4f9"
   dependencies:
     "@types/lodash.snakecase" "^4.1.9"
     ajv "^8.17.1"

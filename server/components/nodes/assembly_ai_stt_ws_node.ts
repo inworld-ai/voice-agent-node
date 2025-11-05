@@ -358,16 +358,37 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         ? (input.toStream() as GraphTypes.AudioChunkStream)
         : input0;
 
-    // Get iteration count from metadata
-    const iteration =
-      input !== undefined &&
-      input !== null &&
-      input instanceof DataStreamWithMetadata
-        ? (input.getMetadata().iteration || 0) + 1
-        : 1;
-
     const sessionId = context.getDatastore().get('sessionId') as string;
     const connection = this.connections[sessionId];
+
+    // Get iteration number from metadata, or parse from interactionId, or default to 1
+    // Note: We only READ connection.state.interactionId, never WRITE it (TextInputNode does that)
+    const metadata = input?.getMetadata?.() || {};
+    let previousIteration = (metadata.iteration as number) || 0;
+
+    // If no iteration in metadata, try parsing from interactionId
+    const currentId = connection.state.interactionId;
+    const delimiterIndex = currentId.indexOf('#');
+
+    if (previousIteration === 0 && delimiterIndex !== -1) {
+      // Try to extract iteration from interactionId (e.g., "abc123#2" -> 2)
+      const iterationStr = currentId.substring(delimiterIndex + 1);
+      const parsedIteration = parseInt(iterationStr, 10);
+      if (!isNaN(parsedIteration) && /^\d+$/.test(iterationStr)) {
+        previousIteration = parsedIteration;
+      }
+    }
+
+    const iteration = previousIteration + 1;
+
+    // Get base interactionId (without iteration suffix)
+    const baseId =
+      delimiterIndex !== -1
+        ? currentId.substring(0, delimiterIndex)
+        : currentId;
+
+    // Compute next interactionId (don't write to connection.state yet - TextInputNode will do that)
+    const nextInteractionId = `${baseId}#${iteration}`;
 
     if (connection?.unloaded) {
       throw Error(`Session unloaded for sessionId: ${sessionId}`);
@@ -422,7 +443,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
             return;
           }
 
-          this.sendCancellation(sessionId, connection.state?.interactionId);
+          this.sendCancellation(sessionId, nextInteractionId);
 
           // Send partial transcript updates to the client for real-time feedback
           if (!isFinal) {
@@ -431,7 +452,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
             if (textToSend) {
               this.sendPartialTranscript(
                 sessionId,
-                String(iteration),
+                nextInteractionId,
                 textToSend,
               );
             }
@@ -617,6 +638,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       return new DataStreamWithMetadata(audioStream, {
         elementType: 'Audio',
         iteration: iteration,
+        interactionId: nextInteractionId,
         session_id: sessionId,
         assembly_session_id: session.assemblySessionId,
         transcript: transcriptText,
@@ -642,6 +664,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       return new DataStreamWithMetadata(audioStream, {
         elementType: 'Audio',
         iteration: iteration,
+        interactionId: nextInteractionId,
         session_id: sessionId,
         assembly_session_id: session?.assemblySessionId || '',
         transcript: '',
