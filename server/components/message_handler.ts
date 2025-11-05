@@ -14,7 +14,6 @@ const WavEncoder = require('wav-encoder');
 
 export class MessageHandler {
   private INPUT_SAMPLE_RATE = INPUT_SAMPLE_RATE;
-  private interruptionEnabled: boolean;
   private currentInteractionId: string = v4();
 
   // Keep track of the processing queue to avoid concurrent execution of the graph
@@ -25,19 +24,12 @@ export class MessageHandler {
   constructor(
     private inworldApp: InworldApp,
     private send: (data: any) => void,
-  ) {
-    this.interruptionEnabled = inworldApp.interruptionEnabled;
-  }
+  ) {}
 
   private createNewInteraction(logMessage: string): string {
     this.currentInteractionId = v4();
     console.log(logMessage, this.currentInteractionId);
-    this.send(
-      EventFactory.newInteraction(
-        this.currentInteractionId,
-        this.interruptionEnabled,
-      ),
-    );
+    this.send(EventFactory.newInteraction(this.currentInteractionId));
     return this.currentInteractionId;
   }
 
@@ -307,18 +299,6 @@ export class MessageHandler {
     sessionId: string,
     currentGraphInteractionId: string | undefined,
   ): Promise<string | undefined> {
-    if (
-      this.interruptionEnabled &&
-      interactionId &&
-      this.currentInteractionId !== interactionId
-    ) {
-      console.log(
-        'Interaction ID mismatch, skipping response',
-        this.currentInteractionId,
-        interactionId,
-      );
-      return currentGraphInteractionId;
-    }
 
     // Log result type for debugging
     const resultType = result?.data?.constructor?.name || typeof result?.data;
@@ -328,23 +308,6 @@ export class MessageHandler {
       await result.processResponse({
         TTSOutputStream: async (ttsStream: GraphTypes.TTSOutputStream) => {
           for await (const chunk of ttsStream) {
-            // Check interruption using either pre-defined interactionId or currentGraphInteractionId
-            const checkInteractionId =
-              interactionId || currentGraphInteractionId;
-            if (
-              this.interruptionEnabled &&
-              checkInteractionId &&
-              this.currentInteractionId !== checkInteractionId
-            ) {
-              console.log(
-                'Interaction ID mismatch, skipping response',
-                'current:',
-                this.currentInteractionId,
-                'processing:',
-                checkInteractionId,
-              );
-              return;
-            }
             const decodedData = Buffer.from(chunk.audio?.data, 'base64');
             const audioBuffer = await WavEncoder.encode({
               sampleRate: chunk.audio.sampleRate,

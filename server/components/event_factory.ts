@@ -46,12 +46,11 @@ export class EventFactory {
     };
   }
 
-  static newInteraction(interactionId: string, interruptionEnabled: boolean) {
+  static newInteraction(interactionId: string) {
     return {
       type: 'NEW_INTERACTION',
       date: new Date(),
       packetId: { interactionId },
-      interruptionEnabled,
     };
   }
 
