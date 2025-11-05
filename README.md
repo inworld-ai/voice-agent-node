@@ -11,9 +11,88 @@ This README guides you through setting up and running the Voice Agent applicatio
 
 The application consists of two main components:
 
-- **server**: Handles communication with Inworld's LLM, STT, and TTS services
+- **server**: Handles communication with Inworld's LLM, STT, and TTS services through a sophisticated graph-based pipeline
 
 - **client**: Provides a user interface for interacting with the AI agent
+
+## Server Architecture
+
+The voice agent server uses Inworld's Graph Framework with two main processing pipelines:
+
+### Pipeline Overview
+
+```mermaid
+flowchart TB
+    subgraph AUDIO["AUDIO INPUT PIPELINE"]
+        AudioInput[AudioInput]
+        
+        subgraph OPT1["OPTION 1: VAD-based (default)"]
+            AudioStreamSlicer[AudioStreamSlicer]
+            AudioExtractor[AudioExtractor]
+            SpeechNotif1[SpeechCompleteNotifier<br/>terminal node]
+            AudioNorm[Audio Normalizer]
+            STT1[STT]
+            InteractionInfo1[InteractionInfo]
+            
+            AudioStreamSlicer -->|interaction_complete| AudioExtractor
+            AudioStreamSlicer -->|interaction_complete| SpeechNotif1
+            AudioStreamSlicer -->|stream_exhausted=false<br/>loop| AudioStreamSlicer
+            AudioExtractor -->|useGroq?=No<br/>Inworld| AudioNorm
+            AudioExtractor -->|useGroq?=Yes<br/>Groq| STT1
+            AudioNorm --> STT1
+            STT1 -->|text.length>0| InteractionInfo1
+            AudioStreamSlicer -.->|metadata| InteractionInfo1
+        end
+        
+        subgraph OPT2["OPTION 2: Assembly.AI"]
+            AssemblyAI[AssemblyAI STT]
+            TranscriptExtractor[TranscriptExtractor]
+            SpeechNotif2[SpeechCompleteNotifier<br/>terminal node]
+            
+            AssemblyAI -->|interaction_complete| TranscriptExtractor
+            AssemblyAI -->|interaction_complete| SpeechNotif2
+            AssemblyAI -->|stream_exhausted=false<br/>loop| AssemblyAI
+        end
+        
+        AudioInput --> OPT1
+        AudioInput --> OPT2
+        
+        InteractionInfo1 --> InteractionQueue[InteractionQueue]
+        TranscriptExtractor --> InteractionQueue
+    end
+    
+    subgraph TEXT["TEXT PROCESSING & TTS PIPELINE"]
+        TextInput[TextInput]
+        DialogPrompt[DialogPromptBuilder]
+        LLM[LLM]
+        TextChunk[TextChunking]
+        TextAgg[TextAggregator]
+        TTS[TTS<br/>end]
+        StateUpdate[StateUpdate]
+        
+        TextInput --> DialogPrompt
+        DialogPrompt --> LLM
+        LLM --> TextChunk
+        LLM --> TextAgg
+        TextChunk --> TTS
+        TextAgg --> StateUpdate
+        StateUpdate -.->|loop optional| InteractionQueue
+    end
+    
+    InteractionQueue -->|text.length>0| TextInput
+
+    style SpeechNotif1 fill:#f9f,stroke:#333,stroke-width:2px
+    style SpeechNotif2 fill:#f9f,stroke:#333,stroke-width:2px
+    style TTS fill:#9f9,stroke:#333,stroke-width:2px
+```
+
+### STT Provider Options
+
+The server supports three Speech-to-Text providers:
+
+1. **Inworld Remote STT** (default) - Uses audio normalization for optimal quality
+2. **Groq Whisper** - Fast and cost-effective, skips normalization
+3. **Assembly.AI** - High accuracy with built-in speech segmentation
 
 ## Setup
 
