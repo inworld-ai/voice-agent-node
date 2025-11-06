@@ -14,7 +14,6 @@ export class InworldApp {
   voiceId: string;
   vadModelPath: string;
   graphVisualizationEnabled: boolean;
-  interruptionEnabled: boolean;
   disableAutoInterruption: boolean; // Flag to disable graph-based auto-interruptions (default: false, meaning auto-interruptions are enabled)
   ttsModelId: string;
   connections: {
@@ -47,7 +46,6 @@ export class InworldApp {
     this.voiceId = this.env.voiceId;
     this.vadModelPath = this.env.vadModelPath;
     this.graphVisualizationEnabled = this.env.graphVisualizationEnabled;
-    this.interruptionEnabled = this.env.interruptionEnabled;
     this.disableAutoInterruption = this.env.disableAutoInterruption;
     this.ttsModelId = this.env.ttsModelId;
 
@@ -67,7 +65,6 @@ export class InworldApp {
       voiceId: this.voiceId,
       connections: this.connections,
       graphVisualizationEnabled: this.graphVisualizationEnabled,
-      interruptionEnabled: this.interruptionEnabled,
       disableAutoInterruption: this.disableAutoInterruption,
       ttsModelId: this.ttsModelId,
       vadClient: this.vadClient,
@@ -113,7 +110,6 @@ export class InworldApp {
       connections: this.connections,
       withAudioInput: true,
       graphVisualizationEnabled: this.graphVisualizationEnabled,
-      interruptionEnabled: this.interruptionEnabled,
       disableAutoInterruption: this.disableAutoInterruption,
       ttsModelId: this.ttsModelId,
       vadClient: this.vadClient,

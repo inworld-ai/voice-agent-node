@@ -142,17 +142,6 @@ function App() {
           return prev;
         });
       }
-
-      if (packet.interruptionEnabled) {
-        // Only stop audio if we're actually playing (this indicates an interruption)
-        // Don't stop if audio queue is empty (this is just a new interaction starting)
-        if (player.getIsPlaying() || player.getQueueLength() > 0) {
-          console.log('🛑 Stopping audio playback due to interruption');
-          player.stop();
-        } else {
-          console.log('📝 New interaction starting (no audio to stop)');
-        }
-      }
     } else if (packet?.type === 'CANCEL_RESPONSE') {
       console.log('Cancel response: stopping audio playback');
       player.stop();

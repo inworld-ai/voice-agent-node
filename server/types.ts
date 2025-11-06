@@ -83,7 +83,6 @@ export interface CreateGraphPropsInterface {
   llmProvider: string;
   voiceId: string;
   graphVisualizationEnabled: boolean;
-  interruptionEnabled: boolean;
   disableAutoInterruption: boolean; // Flag to disable graph-based auto-interruptions (default: false, meaning auto-interruptions are enabled)
   connections: ConnectionsMap;
   withAudioInput?: boolean;
