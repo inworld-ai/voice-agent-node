@@ -58,19 +58,15 @@ The client will start on port 3000 and should automatically open in your default
 
 ### Step 5: Configure and Use the Application
 
-1. Configure the agent on the UI:
-   - Enter your name
-   - Set the agent's name
-   - Provide a description for the agent
-   - Define the agent's motivation
+1. Define the agent settings:
+   - Enter the agent system prompt
+   - Select an Speech to Text service
+   - Click "Create Agent"
 
-2. Click "Start" to begin the conversation
-
-3. Interact with the agent:
-   - Type text in the input field and press Enter or click the send button
-   - Click the microphone icon to use voice input. Click the microphone icon again to stop the recording. Then you will receive a response from the agent
-   - Click the copy icon to copy the conversation to the clipboard
-
+2. Interact with the agent:
+   - For voice input, click the microphone icon to unmute yourself. Click again to mute yourself.
+   - For text input, enter text in the input field and press Enter to send it to the agent
+  
 ## Repo Structure
 
 The application consists of two main components:
@@ -160,9 +156,7 @@ The server supports three Speech-to-Text providers:
 ## Troubleshooting
 
 - If you encounter connection issues, ensure both server and client are running. Server should be running on port 4000 and client can be running on port 3000 or any other port.
-
 - Check that your API key is valid and properly set in the .env file.
-
 - For voice input issues, ensure your browser has microphone permissions.
 
 **Bug Reports**: [GitHub Issues](https://github.com/inworld-ai/voice-agent-node/issues)
