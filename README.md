@@ -119,10 +119,10 @@ Install dependencies for both server and client:
 ```bash
 # Install server dependencies
 cd server
-yarn install
+npm install
 
 # Start the server
-yarn start
+npm start
 ```
 
 The server will start on port 4000.
@@ -130,8 +130,8 @@ The server will start on port 4000.
 ```bash
 # Install client dependencies
 cd ../client
-yarn install
-yarn start
+npm install
+npm start
 ```
 
 The client will start on port 3000 and should automatically open in your default browser. It's possible that port 3000 is already in use, so the next available port will be used.
