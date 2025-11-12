@@ -318,7 +318,7 @@ function App() {
 
   const openConnection = useCallback(async () => {
     key = v4();
-    const { agent, user, sttService } = formMethods.getValues();
+    const { agent, user } = formMethods.getValues();
 
     setChatting(true);
     setUserName(user?.name!);
@@ -329,7 +329,7 @@ function App() {
       body: JSON.stringify({
         userName: user?.name,
         agent,
-        sttService: sttService || 'inworld', // Default to inworld if not specified
+        sttService: 'assemblyai', // Always use Assembly.AI (only supported STT service)
       }),
     });
     const data = await response.json();
@@ -340,24 +340,28 @@ function App() {
       // Handle STT service configuration errors
       if (data.error && data.requestedService) {
         const envVarMap: { [key: string]: string } = {
-          groq: 'GROQ_API_KEY',
           assemblyai: 'ASSEMBLY_AI_API_KEY',
         };
 
         const envVar = envVarMap[data.requestedService];
-        const availableList = data.availableServices?.join(', ') || 'inworld';
+        const availableList = data.availableServices?.join(', ') || 'assemblyai';
 
-        toast.error(
-          `${data.error}\n\n` +
-            `Please set the ${envVar} environment variable on the server.\n\n` +
-            `Available STT services: ${availableList}`,
-          {
-            duration: 8000,
-            style: {
-              maxWidth: '500px',
-            },
+        // Build error message
+        let errorMessage = data.error;
+        if (envVar) {
+          errorMessage += `\n\nPlease set the ${envVar} environment variable on the server.`;
+        }
+        if (data.error.includes('Only Assembly.AI STT is supported')) {
+          errorMessage += `\n\nThe requested STT service "${data.requestedService}" is not supported. Only Assembly.AI is available.`;
+        }
+        errorMessage += `\n\nAvailable STT services: ${availableList}`;
+
+        toast.error(errorMessage, {
+          duration: 8000,
+          style: {
+            maxWidth: '500px',
           },
-        );
+        });
 
         console.error('STT Service Error:', {
           error: data.error,
@@ -459,8 +463,10 @@ function App() {
       ? JSON.parse(configuration)
       : defaults.configuration;
 
+    // Normalize sttService to 'assemblyai' (remove any old values like 'inworld' or 'groq')
     formMethods.reset({
       ...parsedConfiguration,
+      sttService: 'assemblyai',
     });
 
     setInitialized(true);

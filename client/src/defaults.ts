@@ -20,5 +20,5 @@ export const configuration = {
     ].join('\n'),
   },
   voiceId: DEFAULT_VOICE_ID,
-  sttService: 'inworld' as const,
+  sttService: 'assemblyai' as const,
 };

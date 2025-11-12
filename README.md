@@ -6,6 +6,8 @@ This README guides you through setting up and running the Voice Agent applicatio
 ## Prerequisites
 
 - Node.js 18 or higher
+- Assembly.AI API key (required for speech-to-text functionality)
+- Inworld API key (required)
 
 ## Project Structure
 
@@ -26,38 +28,18 @@ flowchart TB
     subgraph AUDIO["AUDIO INPUT PIPELINE"]
         AudioInput[AudioInput]
         
-        subgraph OPT1["OPTION 1: VAD-based (default)"]
-            AudioStreamSlicer[AudioStreamSlicer]
-            AudioExtractor[AudioExtractor]
-            SpeechNotif1[SpeechCompleteNotifier<br/>terminal node]
-            AudioNorm[Audio Normalizer]
-            STT1[STT]
-            InteractionInfo1[InteractionInfo]
-            
-            AudioStreamSlicer -->|interaction_complete| AudioExtractor
-            AudioStreamSlicer -->|interaction_complete| SpeechNotif1
-            AudioStreamSlicer -->|stream_exhausted=false<br/>loop| AudioStreamSlicer
-            AudioExtractor -->|useGroq?=No<br/>Inworld| AudioNorm
-            AudioExtractor -->|useGroq?=Yes<br/>Groq| STT1
-            AudioNorm --> STT1
-            STT1 -->|text.length>0| InteractionInfo1
-            AudioStreamSlicer -.->|metadata| InteractionInfo1
-        end
-        
-        subgraph OPT2["OPTION 2: Assembly.AI"]
+        subgraph OPT1["Assembly.AI STT Pipeline"]
             AssemblyAI[AssemblyAI STT]
             TranscriptExtractor[TranscriptExtractor]
-            SpeechNotif2[SpeechCompleteNotifier<br/>terminal node]
+            SpeechNotif1[SpeechCompleteNotifier<br/>terminal node]
             
             AssemblyAI -->|interaction_complete| TranscriptExtractor
-            AssemblyAI -->|interaction_complete| SpeechNotif2
+            AssemblyAI -->|interaction_complete| SpeechNotif1
             AssemblyAI -->|stream_exhausted=false<br/>loop| AssemblyAI
         end
         
         AudioInput --> OPT1
-        AudioInput --> OPT2
         
-        InteractionInfo1 --> InteractionQueue[InteractionQueue]
         TranscriptExtractor --> InteractionQueue
     end
     
@@ -82,17 +64,12 @@ flowchart TB
     InteractionQueue -->|text.length>0| TextInput
 
     style SpeechNotif1 fill:#f9f,stroke:#333,stroke-width:2px
-    style SpeechNotif2 fill:#f9f,stroke:#333,stroke-width:2px
     style TTS fill:#9f9,stroke:#333,stroke-width:2px
 ```
 
-### STT Provider Options
+### STT Provider
 
-The server supports three Speech-to-Text providers:
-
-1. **Inworld Remote STT** (default) - Uses audio normalization for optimal quality
-2. **Groq Whisper** - Fast and cost-effective, skips normalization
-3. **Assembly.AI** - High accuracy with built-in speech segmentation
+The server uses **Assembly.AI** as the Speech-to-Text provider, which provides high accuracy with built-in speech segmentation.
 
 ## Setup
 
@@ -101,6 +78,19 @@ The server supports three Speech-to-Text providers:
 #### Server Environment Variables
 
 Copy `server/.env-sample` to `server/.env` and fill all required variables. Some variables are optional and can be left empty. In this case default values will be used.
+
+**Required Environment Variables:**
+- `INWORLD_API_KEY` - Your Inworld API key (required)
+- `ASSEMBLY_AI_API_KEY` - Your Assembly.AI API key (required for speech-to-text)
+
+**Optional Environment Variables:**
+- `VAD_MODEL_PATH` - Path to VAD model (defaults to packaged model)
+- `LLM_MODEL_NAME` - LLM model name (defaults to `gpt-4o-mini`)
+- `LLM_PROVIDER` - LLM provider (defaults to `openai`)
+- `VOICE_ID` - Voice ID for TTS (defaults to `Dennis`)
+- `TTS_MODEL_ID` - TTS model ID (defaults to `inworld-tts-1`)
+- `GRAPH_VISUALIZATION_ENABLED` - Enable graph visualization (defaults to `false`)
+- `DISABLE_AUTO_INTERRUPTION` - Disable auto-interruption (defaults to `false`)
 
 #### Client Environment Variables (Optional)
 
@@ -164,6 +154,8 @@ The client will start on port 3000 and should automatically open in your default
 
 - Don't forget to install the Inworld Runtime from the package or using link to local package for server application. Client application doesn't need to install the framework.
 
-- Check that your API key is valid and properly set in the .env file.
+- Check that your API keys are valid and properly set in the `.env` file:
+  - `INWORLD_API_KEY` - Required for Inworld services
+  - `ASSEMBLY_AI_API_KEY` - Required for speech-to-text functionality
 
 - For voice input issues, ensure your browser has microphone permissions.

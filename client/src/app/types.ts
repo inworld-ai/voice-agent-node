@@ -1,4 +1,4 @@
-export type STTService = 'inworld' | 'groq' | 'assemblyai';
+export type STTService = 'assemblyai';
 
 export type ConfigurationSession = {
   agent?: ConfigurationAgent;
