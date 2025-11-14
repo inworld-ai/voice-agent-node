@@ -70,10 +70,31 @@ The client will start on port 3000 and should automatically open in your default
   
 ## Repo Structure
 
-The application consists of two main components:
-
-- **server** - Handles communication with Inworld's LLM, STT, and TTS services through a sophisticated graph-based pipeline
-- **client** - Provides a user interface for interacting with the AI agent
+```
+voice-agent-node/
+├── server/                       # Backend handling Inworld's LLM, STT, and TTS services
+│   ├── components/
+│   │   ├── graph.ts              # Main graph-based pipeline orchestration
+│   │   ├── stt_graph.ts          # Speech-to-text graph configuration
+│   │   ├── message_handler.ts    # WebSocket message handling
+│   │   ├── audio_handler.ts      # Audio stream processing
+│   │   └── nodes/                # Graph node implementations (STT, LLM, TTS processing)
+│   ├── models/
+│   │   └── silero_vad.onnx       # VAD model for voice activity detection
+│   ├── index.ts                  # Server entry point
+│   ├── package.json
+│   └── tsconfig.json
+├── client/                       # Frontend React application
+│   ├── src/
+│   │   ├── app/                  # UI components (chat, configuration, shared components)
+│   │   ├── App.tsx
+│   │   └── index.tsx
+│   ├── public/
+│   ├── package.json
+│   └── vite.config.mts
+├── constants.ts
+└── LICENSE
+```
 
 ## Architecture
 
