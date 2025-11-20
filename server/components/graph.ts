@@ -170,7 +170,6 @@ export class InworldGraphWrapper {
       sampleRate: TTS_SAMPLE_RATE,
       temperature: 0.8,
       speakingRate: 1,
-      reportToClient: true,
     });
 
     const graphName = `voice-agent${postfix}`;
