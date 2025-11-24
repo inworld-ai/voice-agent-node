@@ -4,7 +4,7 @@ This application demonstrates a simple chat interface with an AI agent that can 
 
 ## Prerequisites
 
-- Node.js 18 or higher
+- Node.js 20 or higher
 - Assembly.AI API key (required for speech-to-text functionality)
 - Inworld API key (required)
 
