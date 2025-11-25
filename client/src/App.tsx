@@ -1,6 +1,5 @@
 import './App.css';
 
-import { Box, Typography } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import toast, { Toaster } from 'react-hot-toast';
@@ -33,6 +32,35 @@ interface CurrentContext {
 
 const player = new Player();
 let key = '';
+
+/**
+ * Formats audio transcript text to ensure proper sentence structure:
+ * - Starts with a capital letter
+ * - Ends with a period (if final and not already ending with punctuation)
+ */
+function formatAudioTranscript(text: string, isFinal: boolean = true): string {
+  if (!text || text.trim().length === 0) {
+    return text;
+  }
+
+  let formatted = text.trim();
+
+  // Capitalize first letter
+  if (formatted.length > 0) {
+    formatted = formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  }
+
+  // For final messages, ensure it ends with a period if it doesn't already end with punctuation
+  if (isFinal) {
+    const lastChar = formatted[formatted.length - 1];
+    const endsWithPunctuation = /[.!?]/.test(lastChar);
+    if (!endsWithPunctuation) {
+      formatted += '.';
+    }
+  }
+
+  return formatted;
+}
 
 function App() {
   const formMethods = useForm<Configuration>();
@@ -206,12 +234,19 @@ function App() {
       // isAgent is true for agent messages, undefined/false for user messages
       if (trimmedText.length > 0 || isAgent === true) {
         console.log('✅ Adding text message to chat');
+        
+        // Format audio transcripts for user messages (ensure proper sentence structure)
+        let displayText = packet.text.text;
+        if (!isAgent) {
+          displayText = formatAudioTranscript(packet.text.text, packet.text.final);
+        }
+        
         chatItem = {
           id: packet.packetId?.utteranceId,
           type: CHAT_HISTORY_TYPE.ACTOR,
           date: new Date(packet.date!),
           source: packet.routing?.source,
-          text: packet.text.text, // Keep original text for agent messages
+          text: displayText, // Formatted text for user messages, original for agent messages
           interactionId: packet.packetId?.interactionId,
           isRecognizing: !packet.text.final,
           author: isAgent === true ? agent?.name : userName,
@@ -219,14 +254,15 @@ function App() {
 
         // Update latency data with user text for display
         if (!isAgent && packet.text.final && packet.packetId?.interactionId) {
+          const formattedUserText = formatAudioTranscript(trimmedText, true);
           console.log(
-            `🎯 User text received for interaction ${packet.packetId.interactionId}: "${trimmedText}"`,
+            `🎯 User text received for interaction ${packet.packetId.interactionId}: "${formattedUserText}"`,
           );
           setLatencyData((prev) => {
             return prev.map((item) =>
               item.interactionId === packet.packetId.interactionId &&
               !item.userText
-                ? { ...item, userText: trimmedText }
+                ? { ...item, userText: formattedUserText }
                 : item,
             );
           });
@@ -477,32 +513,15 @@ function App() {
   }, []);
 
   const content = chatting ? (
-    <>
-      {open && agent ? (
-        <Chat
-          chatHistory={chatHistory}
-          connection={connection!}
-          onStopChatting={stopChatting}
-          userName={userName}
-          latencyData={latencyData}
-          onStopRecordingRef={stopRecordingRef}
-        />
-      ) : (
-        <Box
-          sx={{
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-            height: '100vh',
-            bgcolor: '#f8f9fa',
-          }}
-        >
-          <Typography variant="h6" color="text.secondary">
-            Loading...
-          </Typography>
-        </Box>
-      )}
-    </>
+    <Chat
+      chatHistory={chatHistory}
+      connection={connection}
+      onStopChatting={stopChatting}
+      userName={userName}
+      latencyData={latencyData}
+      onStopRecordingRef={stopRecordingRef}
+      isLoaded={open && !!agent}
+    />
   ) : (
     <ConfigView
       canStart={formMethods.formState.isValid}
