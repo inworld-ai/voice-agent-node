@@ -42,3 +42,15 @@ bin/win32_x64/
 .yarn/
 .yarnrc.yml
 docs_md
+
+# Docker and Cloud Deployment files
+docker-compose.yml
+.dockerignore
+.gcloudignore
+deploy-cloudrun.sh
+README_INTERNAL.md
+server/Dockerfile
+server/cloudbuild.yaml
+client/Dockerfile
+client/cloudbuild.yaml
+client/nginx.conf
