@@ -61,6 +61,7 @@ export function LatencyChart(props: LatencyChartProps) {
         zIndex: 20,
         maxWidth: isExpanded ? '400px' : '200px',
         transition: 'all 0.3s ease-in-out',
+        display: { xs: 'none', md: 'block' }, // Hide on mobile, show on desktop
       }}
     >
       <Box
