@@ -1,4 +1,4 @@
-export const DEFAULT_VOICE_ID = 'Dennis';
+export const DEFAULT_VOICE_ID = 'Theodore';
 export const DEFAULT_LLM_MODEL_NAME = 'llama-3.3-70b-versatile'; //'gpt-4o-mini';
 export const DEFAULT_PROVIDER = 'groq'; //'openai';
 export const DEFAULT_TTS_MODEL_ID = 'inworld-tts-1';
