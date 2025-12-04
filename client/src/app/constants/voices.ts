@@ -130,4 +130,4 @@ export const AVAILABLE_VOICES: Voice[] = [
   },
 ];
 
-export const DEFAULT_VOICE_ID = 'Dennis';
+export const DEFAULT_VOICE_ID = 'Theodore';
