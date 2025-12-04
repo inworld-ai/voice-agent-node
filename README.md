@@ -148,8 +148,8 @@ flowchart TB
     
     InteractionQueue -->|text.length>0| TextInput
 
-    style SpeechNotif1 fill:#f9f,stroke:#333,stroke-width:2px
-    style TTS fill:#9f9,stroke:#333,stroke-width:2px
+    style SpeechNotif1 fill:#f9f,stroke:#333,stroke-width:2px,color:#000
+    style TTS fill:#9f9,stroke:#333,stroke-width:2px,color:#000
 ```
 
 ### STT Provider
