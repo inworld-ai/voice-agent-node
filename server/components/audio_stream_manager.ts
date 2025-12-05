@@ -10,7 +10,7 @@ import { AudioChunkInterface } from '@inworld/runtime/common';
 
 // Type for plain audio objects expected by the framework
 type PlainAudioChunk = {
-  type: 'Audio';
+  _iw_type: 'Audio';
   data: { data: number[]; sampleRate: number };
 };
 
@@ -31,7 +31,7 @@ export class AudioStreamManager {
 
     // Create plain audio object matching framework expectations
     const audioData: PlainAudioChunk = {
-      type: 'Audio',
+      _iw_type: 'Audio',
       data: {
         data: Array.isArray(chunk.data) ? chunk.data : Array.from(chunk.data),
         sampleRate: chunk.sampleRate,
