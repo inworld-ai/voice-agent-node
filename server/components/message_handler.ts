@@ -196,7 +196,7 @@ export class MessageHandler {
     // Create the tagged stream with metadata
     // The metadata (sessionId, state) will be accessible to nodes via DataStreamWithMetadata
     const taggedStream = Object.assign(audioStreamGenerator(), {
-      type: 'Audio',
+      _iw_type: 'Audio',
     });
 
     const { outputStream } = await graphWrapper.graph.start(taggedStream, {
