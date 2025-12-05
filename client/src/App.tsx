@@ -1,5 +1,6 @@
 import './App.css';
 
+import { Box, Typography } from '@mui/material';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import toast, { Toaster } from 'react-hot-toast';
@@ -32,35 +33,6 @@ interface CurrentContext {
 
 const player = new Player();
 let key = '';
-
-/**
- * Formats audio transcript text to ensure proper sentence structure:
- * - Starts with a capital letter
- * - Ends with a period (if final and not already ending with punctuation)
- */
-function formatAudioTranscript(text: string, isFinal: boolean = true): string {
-  if (!text || text.trim().length === 0) {
-    return text;
-  }
-
-  let formatted = text.trim();
-
-  // Capitalize first letter
-  if (formatted.length > 0) {
-    formatted = formatted.charAt(0).toUpperCase() + formatted.slice(1);
-  }
-
-  // For final messages, ensure it ends with a period if it doesn't already end with punctuation
-  if (isFinal) {
-    const lastChar = formatted[formatted.length - 1];
-    const endsWithPunctuation = /[.!?]/.test(lastChar);
-    if (!endsWithPunctuation) {
-      formatted += '.';
-    }
-  }
-
-  return formatted;
-}
 
 function App() {
   const formMethods = useForm<Configuration>();
@@ -170,6 +142,17 @@ function App() {
           return prev;
         });
       }
+
+      if (packet.interruptionEnabled) {
+        // Only stop audio if we're actually playing (this indicates an interruption)
+        // Don't stop if audio queue is empty (this is just a new interaction starting)
+        if (player.getIsPlaying() || player.getQueueLength() > 0) {
+          console.log('🛑 Stopping audio playback due to interruption');
+          player.stop();
+        } else {
+          console.log('📝 New interaction starting (no audio to stop)');
+        }
+      }
     } else if (packet?.type === 'CANCEL_RESPONSE') {
       console.log('Cancel response: stopping audio playback');
       player.stop();
@@ -234,19 +217,12 @@ function App() {
       // isAgent is true for agent messages, undefined/false for user messages
       if (trimmedText.length > 0 || isAgent === true) {
         console.log('✅ Adding text message to chat');
-        
-        // Format audio transcripts for user messages (ensure proper sentence structure)
-        let displayText = packet.text.text;
-        if (!isAgent) {
-          displayText = formatAudioTranscript(packet.text.text, packet.text.final);
-        }
-        
         chatItem = {
           id: packet.packetId?.utteranceId,
           type: CHAT_HISTORY_TYPE.ACTOR,
           date: new Date(packet.date!),
           source: packet.routing?.source,
-          text: displayText, // Formatted text for user messages, original for agent messages
+          text: packet.text.text, // Keep original text for agent messages
           interactionId: packet.packetId?.interactionId,
           isRecognizing: !packet.text.final,
           author: isAgent === true ? agent?.name : userName,
@@ -254,15 +230,14 @@ function App() {
 
         // Update latency data with user text for display
         if (!isAgent && packet.text.final && packet.packetId?.interactionId) {
-          const formattedUserText = formatAudioTranscript(trimmedText, true);
           console.log(
-            `🎯 User text received for interaction ${packet.packetId.interactionId}: "${formattedUserText}"`,
+            `🎯 User text received for interaction ${packet.packetId.interactionId}: "${trimmedText}"`,
           );
           setLatencyData((prev) => {
             return prev.map((item) =>
               item.interactionId === packet.packetId.interactionId &&
               !item.userText
-                ? { ...item, userText: formattedUserText }
+                ? { ...item, userText: trimmedText }
                 : item,
             );
           });
@@ -354,7 +329,7 @@ function App() {
 
   const openConnection = useCallback(async () => {
     key = v4();
-    const { agent, user } = formMethods.getValues();
+    const { agent, user, sttService } = formMethods.getValues();
 
     setChatting(true);
     setUserName(user?.name!);
@@ -365,7 +340,7 @@ function App() {
       body: JSON.stringify({
         userName: user?.name,
         agent,
-        sttService: 'assemblyai', // Always use Assembly.AI (only supported STT service)
+        sttService: sttService || 'inworld', // Default to inworld if not specified
       }),
     });
     const data = await response.json();
@@ -376,28 +351,24 @@ function App() {
       // Handle STT service configuration errors
       if (data.error && data.requestedService) {
         const envVarMap: { [key: string]: string } = {
+          groq: 'GROQ_API_KEY',
           assemblyai: 'ASSEMBLY_AI_API_KEY',
         };
 
         const envVar = envVarMap[data.requestedService];
-        const availableList = data.availableServices?.join(', ') || 'assemblyai';
+        const availableList = data.availableServices?.join(', ') || 'inworld';
 
-        // Build error message
-        let errorMessage = data.error;
-        if (envVar) {
-          errorMessage += `\n\nPlease set the ${envVar} environment variable on the server.`;
-        }
-        if (data.error.includes('Only Assembly.AI STT is supported')) {
-          errorMessage += `\n\nThe requested STT service "${data.requestedService}" is not supported. Only Assembly.AI is available.`;
-        }
-        errorMessage += `\n\nAvailable STT services: ${availableList}`;
-
-        toast.error(errorMessage, {
-          duration: 8000,
-          style: {
-            maxWidth: '500px',
+        toast.error(
+          `${data.error}\n\n` +
+            `Please set the ${envVar} environment variable on the server.\n\n` +
+            `Available STT services: ${availableList}`,
+          {
+            duration: 8000,
+            style: {
+              maxWidth: '500px',
+            },
           },
-        });
+        );
 
         console.error('STT Service Error:', {
           error: data.error,
@@ -499,10 +470,8 @@ function App() {
       ? JSON.parse(configuration)
       : defaults.configuration;
 
-    // Normalize sttService to 'assemblyai' (remove any old values like 'inworld' or 'groq')
     formMethods.reset({
       ...parsedConfiguration,
-      sttService: 'assemblyai',
     });
 
     setInitialized(true);
@@ -513,15 +482,32 @@ function App() {
   }, []);
 
   const content = chatting ? (
-    <Chat
-      chatHistory={chatHistory}
-      connection={connection}
-      onStopChatting={stopChatting}
-      userName={userName}
-      latencyData={latencyData}
-      onStopRecordingRef={stopRecordingRef}
-      isLoaded={open && !!agent}
-    />
+    <>
+      {open && agent ? (
+        <Chat
+          chatHistory={chatHistory}
+          connection={connection!}
+          onStopChatting={stopChatting}
+          userName={userName}
+          latencyData={latencyData}
+          onStopRecordingRef={stopRecordingRef}
+        />
+      ) : (
+        <Box
+          sx={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            height: '100vh',
+            bgcolor: '#f8f9fa',
+          }}
+        >
+          <Typography variant="h6" color="text.secondary">
+            Loading...
+          </Typography>
+        </Box>
+      )}
+    </>
   ) : (
     <ConfigView
       canStart={formMethods.formState.isValid}

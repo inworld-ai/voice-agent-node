@@ -205,7 +205,7 @@ export class AudioStreamSlicerNode extends CustomNode {
             return;
           })(),
           {
-            type: 'Audio',
+            _iw_type: 'Audio',
             abort: () => {
               // No-op for exhausted stream
             },

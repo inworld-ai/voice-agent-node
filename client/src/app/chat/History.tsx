@@ -27,45 +27,21 @@ export const History = (props: HistoryProps) => {
   const { history, latencyData } = props;
 
   const ref = useRef<HTMLDivElement>(null);
-  const prevHistoryLengthRef = useRef(0);
 
   const [combinedChatHistory, setCombinedChatHistory] = useState<
     CombinedHistoryItem[]
   >([]);
   const [isInteractionEnd, setIsInteractionEnd] = useState<boolean>(true);
 
-  // Scroll to bottom when combinedChatHistory changes (after messages are processed)
   useEffect(() => {
-    if (ref.current && combinedChatHistory.length > 0) {
-      const isNewMessage = combinedChatHistory.length > prevHistoryLengthRef.current;
-      prevHistoryLengthRef.current = combinedChatHistory.length;
-      
-      if (isNewMessage) {
-        // Use double requestAnimationFrame to ensure DOM is fully updated before scrolling
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            if (ref.current) {
-              // Scroll instantly to prevent glitches
-              ref.current.scrollTop = ref.current.scrollHeight;
-            }
-          });
-        });
-      } else {
-        // For updates to existing messages, scroll only if near bottom
-        if (ref.current) {
-          const { scrollTop, scrollHeight, clientHeight } = ref.current;
-          const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
-          if (isNearBottom) {
-            requestAnimationFrame(() => {
-              if (ref.current) {
-                ref.current.scrollTop = ref.current.scrollHeight;
-              }
-            });
-          }
-        }
-      }
+    // scroll chat down on history change
+    if (ref.current && history) {
+      ref.current.scrollTo({
+        top: ref.current.scrollHeight,
+        behavior: 'smooth',
+      });
     }
-  }, [combinedChatHistory]);
+  }, [history]);
 
   useEffect(() => {
     let currentRecord: CombinedHistoryItem | undefined;
@@ -83,32 +59,16 @@ export const History = (props: HistoryProps) => {
       let item = history[i];
       switch (item.type) {
         case CHAT_HISTORY_TYPE.ACTOR:
-          // For agent messages, also check if there's a placeholder to merge into
-          if (item.source.isAgent) {
-            currentRecord = mergedRecords.find(
-              (r) =>
-                r.interactionId === item.interactionId &&
-                r.type === CHAT_HISTORY_TYPE.ACTOR &&
-                r.source.isAgent &&
-                (r.source.name === item.source.name || r.messages.length === 0), // Match by name or if it's a placeholder
-            ) as CombinedHistoryItem;
-          } else {
-            // For user messages, match by name as before
-            currentRecord = mergedRecords.find(
-              (r) =>
-                r.interactionId === item.interactionId &&
-                [CHAT_HISTORY_TYPE.ACTOR].includes(r.messages?.[0]?.type) &&
-                r.type === CHAT_HISTORY_TYPE.ACTOR &&
-                r.source.name === item.source.name,
-            ) as CombinedHistoryItem;
-          }
+          currentRecord = mergedRecords.find(
+            (r) =>
+              r.interactionId === item.interactionId &&
+              [CHAT_HISTORY_TYPE.ACTOR].includes(r.messages?.[0]?.type) &&
+              r.type === CHAT_HISTORY_TYPE.ACTOR &&
+              r.source.name === item.source.name,
+          ) as CombinedHistoryItem;
 
           if (currentRecord) {
             currentRecord.messages.push(item);
-            // Update source name if it was a placeholder
-            if (currentRecord.messages.length === 1 && currentRecord.source.name === 'Assistant' && item.source.name !== 'Assistant') {
-              currentRecord.source = item.source;
-            }
           } else {
             currentRecord = {
               interactionId: item.interactionId,
@@ -136,53 +96,8 @@ export const History = (props: HistoryProps) => {
 
     setIsInteractionEnd(!hasActors || (!!currentRecord && !!interactionEnd));
 
-    // Find the last user message/interaction that doesn't have an agent response yet
-    // Look for user messages and check if they have corresponding agent messages
-    const userMessages = history.filter(
-      (item) => item.type === CHAT_HISTORY_TYPE.ACTOR && item.source?.isUser === true
-    );
-    
-    // Find the most recent user message that doesn't have an agent response
-    let pendingUserInteractionId: string | undefined;
-    for (let i = userMessages.length - 1; i >= 0; i--) {
-      const userMsg = userMessages[i];
-      const hasAgentResponse = mergedRecords.some(
-        (item) => 
-          item.interactionId === userMsg.interactionId && 
-          item.source.isAgent &&
-          item.messages.some((m) => !m.isRecognizing && m.text && m.text.trim().length > 0)
-      );
-      
-      if (!hasAgentResponse) {
-        pendingUserInteractionId = userMsg.interactionId;
-        break;
-      }
-    }
-
-    // Add placeholder typing bubble if there's a pending user interaction waiting for agent response
-    if (pendingUserInteractionId) {
-      // Check if placeholder doesn't already exist
-      const placeholderExists = mergedRecords.some(
-        (item) => item.interactionId === pendingUserInteractionId && item.source.isAgent && item.messages.length === 0
-      );
-      
-      if (!placeholderExists) {
-        const placeholderItem: CombinedHistoryItem = {
-          interactionId: pendingUserInteractionId,
-          messages: [],
-          source: {
-            name: 'Assistant',
-            isAgent: true,
-            isUser: false,
-          } as Actor,
-          type: CHAT_HISTORY_TYPE.ACTOR,
-        };
-        mergedRecords.push(placeholderItem);
-      }
-    }
-
     setCombinedChatHistory(mergedRecords);
-  }, [history, isInteractionEnd]);
+  }, [history]);
 
   const getContent = (message: HistoryItemActor) => {
     switch (message.type) {
@@ -212,17 +127,13 @@ export const History = (props: HistoryProps) => {
       sx={{
         flex: 1,
         overflow: 'auto',
-        pt: 3,
-        px: 3,
-        pb: 0,
+        p: 3,
         maxWidth: '800px',
         mx: 'auto',
         width: '100%',
-        scrollBehavior: 'auto', // Instant scroll to prevent glitches
-        willChange: 'scroll-position', // Optimize scrolling performance
       }}
     >
-      <Stack spacing={1}>
+      <Stack spacing={3}>
         {combinedChatHistory.map((item, index) => {
           let messages = item.messages;
           // Determine if this is an agent message by checking if it's NOT a user message
@@ -235,7 +146,7 @@ export const History = (props: HistoryProps) => {
 
           return (
             <Box
-              key={`message-group-${item.interactionId}-${index}`}
+              key={`message-group-${index}`}
               sx={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -344,32 +255,66 @@ export const History = (props: HistoryProps) => {
                     ? '0 2px 8px rgba(0, 0, 0, 0.04)'
                     : '0 2px 8px rgba(0, 0, 0, 0.15)',
                   fontFamily: 'Inter, Arial, sans-serif',
-                  transition: 'all 0.3s ease-in-out',
                 }}
               >
-                {messages.length === 0 ? (
-                  // Show typing indicator when no messages yet (placeholder)
-                  <Typing />
-                ) : (
-                  <Typography
-                    variant="body1"
-                    sx={{
-                      lineHeight: 1.5,
-                      fontSize: '14px',
-                      fontFamily: 'Inter, Arial, sans-serif',
-                      fontWeight: 400,
-                    }}
-                  >
-                    {messages.map((m) => (
-                      <React.Fragment key={m.id}>{getContent(m)}</React.Fragment>
-                    ))}
-                  </Typography>
-                )}
+                <Typography
+                  variant="body1"
+                  sx={{
+                    lineHeight: 1.5,
+                    fontSize: '14px',
+                    fontFamily: 'Inter, Arial, sans-serif',
+                    fontWeight: 400,
+                  }}
+                >
+                  {messages.map((m) => (
+                    <React.Fragment key={m.id}>{getContent(m)}</React.Fragment>
+                  ))}
+                </Typography>
               </Box>
             </Box>
           );
         })}
 
+        {/* Typing indicator */}
+        <Fade in={!isInteractionEnd} timeout={500}>
+          <Box sx={{ display: 'flex', justifyContent: 'flex-start' }}>
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'flex-start',
+              }}
+            >
+              <Typography
+                variant="caption"
+                sx={{
+                  color: '#817973',
+                  mb: 1,
+                  px: 1,
+                  fontSize: '12px',
+                  fontWeight: 500,
+                  fontFamily: 'Inter, Arial, sans-serif',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.5px',
+                }}
+              >
+                Assistant
+              </Typography>
+              <Box
+                sx={{
+                  p: 2.5,
+                  borderRadius: '16px',
+                  backgroundColor: '#FFFFFF',
+                  border: '1px solid #E9E5E0',
+                  boxShadow: '0 2px 8px rgba(0, 0, 0, 0.04)',
+                  minWidth: '80px',
+                }}
+              >
+                <Typing />
+              </Box>
+            </Box>
+          </Box>
+        </Fade>
       </Stack>
     </Box>
   );

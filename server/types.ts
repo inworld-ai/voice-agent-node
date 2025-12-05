@@ -83,13 +83,17 @@ export interface CreateGraphPropsInterface {
   llmProvider: string;
   voiceId: string;
   graphVisualizationEnabled: boolean;
+  interruptionEnabled: boolean;
   disableAutoInterruption: boolean; // Flag to disable graph-based auto-interruptions (default: false, meaning auto-interruptions are enabled)
   connections: ConnectionsMap;
   withAudioInput?: boolean;
   ttsModelId: string;
   vadClient?: any; // Shared VAD client for audio processing nodes (required for all audio input pipelines)
-  useAssemblyAI?: boolean; // Use Assembly.AI streaming STT (default: true)
-  assemblyAIApiKey?: string; // Assembly.AI API key (required)
+  useAssemblyAI?: boolean; // Use Assembly.AI streaming STT instead of VAD-based audio processing (default: false)
+  assemblyAIApiKey?: string; // Assembly.AI API key (required when useAssemblyAI is true)
+  useGroq?: boolean; // Use Groq Whisper STT instead of VAD-based audio processing (default: false)
+  groqApiKey?: string; // Groq API key (required when useGroq is true)
+  groqModel?: string; // Groq model to use (default: whisper-large-v3)
 }
 
 export interface InteractionInfo {

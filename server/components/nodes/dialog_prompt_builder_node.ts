@@ -12,7 +12,6 @@ import { State } from '../../types';
  */
 export class DialogPromptBuilderNode extends CustomNode {
   process(_context: ProcessContext, state: State): GraphTypes.LLMChatRequest {
-    console.log('DialogPromptBuilderNode');
     // Convert state messages to LLMMessageInterface format
     const conversationMessages = state.messages.map((msg) => ({
       role: msg.role,

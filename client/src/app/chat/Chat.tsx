@@ -3,10 +3,8 @@ import {
   Box,
   Button,
   Collapse,
-  Fade,
   IconButton,
   Link,
-  Slide,
   TextField,
   Typography,
 } from '@mui/material';
@@ -21,12 +19,11 @@ import { LatencyChart } from './LatencyChart';
 
 interface ChatProps {
   chatHistory: ChatHistoryItem[];
-  connection?: WebSocket;
+  connection: WebSocket;
   onStopChatting: () => void;
   userName: string;
   latencyData: InteractionLatency[];
   onStopRecordingRef?: React.MutableRefObject<(() => void) | undefined>;
-  isLoaded: boolean;
 }
 
 let interval: number;
@@ -35,7 +32,7 @@ let audioCtx: AudioContext;
 let audioWorkletNode: AudioWorkletNode;
 
 export function Chat(props: ChatProps) {
-  const { chatHistory, connection, latencyData, onStopRecordingRef, isLoaded } = props;
+  const { chatHistory, connection, latencyData, onStopRecordingRef } = props;
 
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -53,9 +50,7 @@ export function Chat(props: ChatProps) {
     clearInterval(interval);
     stream?.getTracks().forEach((track) => track.stop());
     audioWorkletNode?.disconnect();
-    if (connection) {
-      connection.send(JSON.stringify({ type: 'audioSessionEnd' }));
-    }
+    connection.send(JSON.stringify({ type: 'audioSessionEnd' }));
   }, [connection]);
 
   // Expose stopRecording to parent via ref
@@ -71,8 +66,6 @@ export function Chat(props: ChatProps) {
   }, [stopRecording, onStopRecordingRef]);
 
   const startRecording = useCallback(async () => {
-    if (!connection || !isLoaded) return;
-    
     try {
       setIsRecording(true);
 
@@ -113,7 +106,7 @@ export function Chat(props: ChatProps) {
 
       // Send accumulated audio chunks periodically
       interval = setInterval(() => {
-        if (leftChannel.length > 0 && connection) {
+        if (leftChannel.length > 0) {
           connection.send(
             JSON.stringify({
               type: 'audio',
@@ -129,11 +122,9 @@ export function Chat(props: ChatProps) {
       setIsRecording(false); // Reset state on error
       throw e; // Re-throw to see the error
     }
-  }, [connection, isLoaded]);
+  }, [connection]);
 
   const handleSend = useCallback(() => {
-    if (!connection || !isLoaded) return;
-    
     const trimmedText = text.trim();
     console.log(
       '🔵 HANDLE SEND - Original text:',
@@ -152,7 +143,7 @@ export function Chat(props: ChatProps) {
     } else {
       console.log('❌ Blocked empty message - not sending');
     }
-  }, [connection, text, isLoaded]);
+  }, [connection, text]);
 
   const handleTextKeyPress = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -164,8 +155,6 @@ export function Chat(props: ChatProps) {
   );
 
   const handleSpeakClick = useCallback(async () => {
-    if (!isLoaded || !connection) return;
-    
     if (isRecording) {
       stopRecording();
       return;
@@ -177,7 +166,7 @@ export function Chat(props: ChatProps) {
     }
 
     return startRecording();
-  }, [isRecording, startRecording, stopRecording, chatHistory.length, isLoaded, connection]);
+  }, [isRecording, startRecording, stopRecording, chatHistory.length]);
 
   const handleTypeInstead = useCallback(() => {
     setShowTextWidget(true);
@@ -258,16 +247,14 @@ export function Chat(props: ChatProps) {
             overflow: 'hidden',
             display: 'flex',
             flexDirection: 'column',
-            paddingBottom: '140px',
-            transition: 'padding-bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           }}
         >
           <History history={chatHistory} latencyData={latencyData} />
         </Box>
 
         {/* Input Widget - Different layouts for center vs bottom */}
-        {/* Centered widget - fades out and scales down when chat starts */}
-        <Fade in={chatHistory.length === 0} timeout={500} unmountOnExit>
+        {chatHistory.length === 0 ? (
+          // Centered vertical widget for initial state
           <Box
             sx={{
               position: 'absolute',
@@ -277,45 +264,33 @@ export function Chat(props: ChatProps) {
               zIndex: 10,
             }}
           >
-              <Box
-                sx={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  gap: 1.5,
-                  backgroundColor: '#FFFFFF',
-                  borderRadius: '24px',
-                  boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
-                  border: '1px solid rgba(0, 0, 0, 0.06)',
-                  p: 2.5,
-                  minWidth: '320px',
-                  maxWidth: '400px',
-                  transform: 'scale(1)',
-                  transition: 'transform 0.5s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-              >
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: 1.5,
+                backgroundColor: '#FFFFFF',
+                borderRadius: '24px',
+                boxShadow: '0 8px 32px rgba(0, 0, 0, 0.12)',
+                border: '1px solid rgba(0, 0, 0, 0.06)',
+                p: 2.5,
+                minWidth: '320px',
+                maxWidth: '400px',
+              }}
+            >
               {/* Microphone Button */}
               <IconButton
                 onClick={handleSpeakClick}
-                disabled={!isLoaded}
                 sx={{
                   height: '48px',
                   width: '48px',
-                  backgroundColor: isRecording ? '#DC2626' : (!isLoaded ? '#CCCCCC' : '#111111'),
+                  backgroundColor: isRecording ? '#DC2626' : '#111111',
                   color: 'white',
                   borderRadius: '50%',
                   position: 'relative',
-                  cursor: !isLoaded ? 'not-allowed' : 'pointer',
-                  opacity: !isLoaded ? 0.6 : 1,
-                  transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                  transform: !isLoaded ? 'scale(0.95)' : 'scale(1)',
                   '&:hover': {
-                    backgroundColor: !isLoaded ? '#CCCCCC' : (isRecording ? '#B91C1C' : '#222222'),
-                    transform: !isLoaded ? 'scale(0.95)' : 'scale(1.05)',
-                  },
-                  '&.Mui-disabled': {
-                    backgroundColor: '#CCCCCC',
-                    color: 'white',
+                    backgroundColor: isRecording ? '#B91C1C' : '#222222',
                   },
                   '&::before': !isRecording
                     ? {
@@ -351,6 +326,7 @@ export function Chat(props: ChatProps) {
                     '50%': { transform: 'scale(1.1)', opacity: 0.08 },
                     '100%': { transform: 'scale(1.2)', opacity: 0 },
                   },
+                  transition: 'all 0.2s ease-in-out',
                 }}
               >
                 {isRecording ? (
@@ -363,49 +339,41 @@ export function Chat(props: ChatProps) {
               <Typography
                 variant="body2"
                 sx={{
-                  color: isRecording ? '#222222' : (!isLoaded ? '#CCCCCC' : '#817973'),
+                  color: isRecording ? '#222222' : '#817973',
                   fontSize: '14px',
                   fontFamily: 'Inter, Arial, sans-serif',
                   fontWeight: 500,
                   textAlign: 'center',
                   mt: 0.5,
-                  transition: 'color 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                 }}
               >
-                {!isLoaded
-                  ? 'Loading...'
-                  : isRecording
+                {isRecording
                   ? 'Listening... Tap to stop'
                   : 'Tap to start speaking'}
               </Typography>
 
               {!isRecording && (
-                <Fade in={isLoaded} timeout={300}>
-                  <Link
-                    component="button"
-                    onClick={handleTypeInstead}
-                    sx={{
-                      color: '#817973',
-                      fontSize: '12px',
-                      fontFamily: 'Inter, Arial, sans-serif',
-                      textDecoration: 'underline',
-                      cursor: isLoaded ? 'pointer' : 'not-allowed',
-                      mt: 0.5,
-                      opacity: isLoaded ? 1 : 0.5,
-                      pointerEvents: isLoaded ? 'auto' : 'none',
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                      '&:hover': {
-                        color: isLoaded ? '#5C5652' : '#817973',
-                      },
-                    }}
-                  >
-                    Type instead
-                  </Link>
-                </Fade>
+                <Link
+                  component="button"
+                  onClick={handleTypeInstead}
+                  sx={{
+                    color: '#817973',
+                    fontSize: '12px',
+                    fontFamily: 'Inter, Arial, sans-serif',
+                    textDecoration: 'underline',
+                    cursor: 'pointer',
+                    mt: 0.5,
+                    '&:hover': {
+                      color: '#5C5652',
+                    },
+                  }}
+                >
+                  Type instead
+                </Link>
               )}
 
               {/* Text input dropdown for center position */}
-              <Collapse in={showTextWidget} timeout={300}>
+              <Collapse in={showTextWidget} timeout={200}>
                 <Box
                   sx={{
                     display: 'flex',
@@ -420,7 +388,6 @@ export function Chat(props: ChatProps) {
                     boxShadow: '0 2px 8px rgba(0, 0, 0, 0.06)',
                     minHeight: '44px',
                     mt: 1.5,
-                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&:hover': {
                       borderColor: '#D6D1CB',
                       backgroundColor: '#FFFFFF',
@@ -439,17 +406,15 @@ export function Chat(props: ChatProps) {
                     value={text}
                     onChange={handleTextChange}
                     onKeyPress={handleTextKeyPress}
-                    placeholder={!isLoaded ? "Loading..." : "Type a message..."}
+                    placeholder="Type a message..."
                     variant="standard"
                     autoFocus
-                    disabled={!isLoaded}
                     sx={{
                       '& .MuiInputBase-root': {
                         fontSize: '14px',
                         fontFamily: 'Inter, Arial, sans-serif',
                         color: '#222222',
                         lineHeight: 1.4,
-                        transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                         '&::before, &::after': {
                           display: 'none',
                         },
@@ -467,26 +432,24 @@ export function Chat(props: ChatProps) {
                   />
 
                   {text.trim() && (
-                    <Fade in={!!text.trim()} timeout={200}>
-                      <IconButton
-                        onClick={handleSend}
-                        sx={{
-                          backgroundColor: '#111111',
-                          color: 'white',
-                          borderRadius: '50%',
-                          width: '32px',
-                          height: '32px',
-                          minWidth: '32px',
-                          ml: 1,
-                          '&:hover': {
-                            backgroundColor: '#222222',
-                          },
-                          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                        }}
-                      >
-                        <ArrowUpward sx={{ fontSize: '16px' }} />
-                      </IconButton>
-                    </Fade>
+                    <IconButton
+                      onClick={handleSend}
+                      sx={{
+                        backgroundColor: '#111111',
+                        color: 'white',
+                        borderRadius: '50%',
+                        width: '32px',
+                        height: '32px',
+                        minWidth: '32px',
+                        ml: 1,
+                        '&:hover': {
+                          backgroundColor: '#222222',
+                        },
+                        transition: 'all 0.2s ease-in-out',
+                      }}
+                    >
+                      <ArrowUpward sx={{ fontSize: '16px' }} />
+                    </IconButton>
                   )}
 
                   <IconButton
@@ -510,21 +473,18 @@ export function Chat(props: ChatProps) {
               </Collapse>
             </Box>
           </Box>
-        </Fade>
-
-        {/* Bottom widget - slides up and fades in when chat starts */}
-        <Slide direction="up" in={chatHistory.length > 0} timeout={600} mountOnEnter unmountOnExit>
+        ) : (
+          // Horizontal bar for bottom position (ChatGPT style)
           <Box
             sx={{
               position: 'fixed',
               bottom: '24px',
-              left: 0,
-              right: 0,
+              left: '50%',
+              transform: 'translateX(-50%)',
               zIndex: 10,
               width: '100%',
-              maxWidth: '800px',
-              mx: 'auto',
-              px: 3,
+              maxWidth: '700px',
+              px: 2,
             }}
           >
             <Box
@@ -539,34 +499,22 @@ export function Chat(props: ChatProps) {
                 py: 1.5,
                 gap: 1.5,
                 minHeight: '56px',
-                width: '100%',
-                maxWidth: '700px',
-                mx: 'auto',
               }}
             >
               {/* Microphone Button */}
               <IconButton
                 onClick={handleSpeakClick}
-                disabled={!isLoaded}
                 sx={{
                   height: '40px',
                   width: '40px',
-                  backgroundColor: isRecording ? '#DC2626' : (!isLoaded ? '#CCCCCC' : '#111111'),
+                  backgroundColor: isRecording ? '#DC2626' : '#111111',
                   color: 'white',
                   borderRadius: '50%',
                   flexShrink: 0,
-                  cursor: !isLoaded ? 'not-allowed' : 'pointer',
-                  opacity: !isLoaded ? 0.6 : 1,
-                  transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                  transform: !isLoaded ? 'scale(0.95)' : 'scale(1)',
                   '&:hover': {
-                    backgroundColor: !isLoaded ? '#CCCCCC' : (isRecording ? '#B91C1C' : '#222222'),
-                    transform: !isLoaded ? 'scale(0.95)' : 'scale(1.05)',
+                    backgroundColor: isRecording ? '#B91C1C' : '#222222',
                   },
-                  '&.Mui-disabled': {
-                    backgroundColor: '#CCCCCC',
-                    color: 'white',
-                  },
+                  transition: 'all 0.2s ease-in-out',
                 }}
               >
                 {isRecording ? (
@@ -583,21 +531,17 @@ export function Chat(props: ChatProps) {
                 onChange={handleTextChange}
                 onKeyPress={handleTextKeyPress}
                 placeholder={
-                  !isLoaded
-                    ? 'Loading...'
-                    : isRecording
+                  isRecording
                     ? 'Listening... Tap mic to stop'
                     : 'Type a message...'
                 }
                 variant="standard"
-                disabled={!isLoaded}
                 sx={{
                   flex: 1,
                   '& .MuiInputBase-root': {
                     fontSize: '16px',
                     fontFamily: 'Inter, Arial, sans-serif',
                     color: '#222222',
-                    transition: 'opacity 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
                     '&::before, &::after': {
                       display: 'none',
                     },
@@ -613,29 +557,27 @@ export function Chat(props: ChatProps) {
               />
 
               {text.trim() && (
-                <Fade in={!!text.trim()} timeout={200}>
-                  <IconButton
-                    onClick={handleSend}
-                    sx={{
-                      backgroundColor: '#111111',
-                      color: 'white',
-                      borderRadius: '50%',
-                      width: '32px',
-                      height: '32px',
-                      minWidth: '32px',
-                      '&:hover': {
-                        backgroundColor: '#222222',
-                      },
-                      transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-                    }}
-                  >
-                    <ArrowUpward sx={{ fontSize: '16px' }} />
-                  </IconButton>
-                </Fade>
+                <IconButton
+                  onClick={handleSend}
+                  sx={{
+                    backgroundColor: '#111111',
+                    color: 'white',
+                    borderRadius: '50%',
+                    width: '32px',
+                    height: '32px',
+                    minWidth: '32px',
+                    '&:hover': {
+                      backgroundColor: '#222222',
+                    },
+                    transition: 'all 0.2s ease-in-out',
+                  }}
+                >
+                  <ArrowUpward sx={{ fontSize: '16px' }} />
+                </IconButton>
               )}
             </Box>
           </Box>
-        </Slide>
+        )}
       </Box>
     </>
   );

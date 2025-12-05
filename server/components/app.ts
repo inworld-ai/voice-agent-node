@@ -14,6 +14,7 @@ export class InworldApp {
   voiceId: string;
   vadModelPath: string;
   graphVisualizationEnabled: boolean;
+  interruptionEnabled: boolean;
   disableAutoInterruption: boolean; // Flag to disable graph-based auto-interruptions (default: false, meaning auto-interruptions are enabled)
   ttsModelId: string;
   connections: {
@@ -24,7 +25,9 @@ export class InworldApp {
 
   graphWithTextInput: InworldGraphWrapper;
 
-  // Lazily-created graph for Assembly.AI STT
+  // Lazily-created graphs for different STT services
+  private graphWithAudioInputInworld?: InworldGraphWrapper;
+  private graphWithAudioInputGroq?: InworldGraphWrapper;
   private graphWithAudioInputAssemblyAI?: InworldGraphWrapper;
 
   // Environment configuration for lazy graph creation
@@ -44,10 +47,13 @@ export class InworldApp {
     this.voiceId = this.env.voiceId;
     this.vadModelPath = this.env.vadModelPath;
     this.graphVisualizationEnabled = this.env.graphVisualizationEnabled;
+    this.interruptionEnabled = this.env.interruptionEnabled;
     this.disableAutoInterruption = this.env.disableAutoInterruption;
     this.ttsModelId = this.env.ttsModelId;
 
-    // Initialize the VAD client for Assembly.AI
+    // Always initialize the VAD client
+    // Needed for VAD-based pipelines (default Remote STT and Groq STT)
+    // Assembly.AI doesn't use VAD, but we initialize it anyway to allow dynamic STT selection
     console.log('Loading VAD model from:', this.vadModelPath);
     this.vadClient = await VADFactory.createLocal({
       modelPath: this.vadModelPath,
@@ -61,6 +67,7 @@ export class InworldApp {
       voiceId: this.voiceId,
       connections: this.connections,
       graphVisualizationEnabled: this.graphVisualizationEnabled,
+      interruptionEnabled: this.interruptionEnabled,
       disableAutoInterruption: this.disableAutoInterruption,
       ttsModelId: this.ttsModelId,
       vadClient: this.vadClient,
@@ -68,18 +75,35 @@ export class InworldApp {
 
     console.log('\n✓ Text input graph initialized');
     console.log(
-      '✓ Audio input graph will be created lazily when first requested\n',
+      '✓ Audio input graphs will be created lazily when first requested\n',
     );
 
-    console.log('✓ STT service: Assembly.AI\n');
+    // Log available STT services
+    console.log('Available STT services:');
+    console.log('  - Inworld Remote STT (always available)');
+    if (this.env.groqApiKey) {
+      console.log('  - Groq Whisper (API key configured)');
+    }
+    if (this.env.assemblyAIApiKey) {
+      console.log('  - Assembly.AI (API key configured)');
+    }
+
+    // Determine default STT service
+    let defaultSTT = 'Inworld Remote STT';
+    if (this.env.useAssemblyAI && this.env.assemblyAIApiKey) {
+      defaultSTT = 'Assembly.AI';
+    } else if (this.env.useGroq && this.env.groqApiKey) {
+      defaultSTT = 'Groq Whisper';
+    }
+    console.log(`\n✓ Default STT: ${defaultSTT}\n`);
   }
 
   /**
-   * Get the Assembly.AI audio graph.
-   * Graph is created lazily on first request.
+   * Get the appropriate audio graph based on the requested STT service.
+   * Graphs are created lazily on first request.
    */
   async getGraphForSTTService(
-    _sttService?: string,
+    sttService?: string,
   ): Promise<InworldGraphWrapper> {
     const baseAudioConfig = {
       apiKey: this.apiKey,
@@ -89,30 +113,71 @@ export class InworldApp {
       connections: this.connections,
       withAudioInput: true,
       graphVisualizationEnabled: this.graphVisualizationEnabled,
+      interruptionEnabled: this.interruptionEnabled,
       disableAutoInterruption: this.disableAutoInterruption,
       ttsModelId: this.ttsModelId,
       vadClient: this.vadClient,
     };
 
-    if (!this.env.assemblyAIApiKey) {
-      // This should not happen since we validate at load time, but defensive check
-      throw new Error(
-        `Assembly.AI STT requested but ASSEMBLY_AI_API_KEY is not configured. This should have been caught during session load.`,
-      );
-    }
+    switch (sttService) {
+      case 'groq':
+        if (!this.env.groqApiKey) {
+          // This should not happen since we validate at load time, but defensive check
+          throw new Error(
+            `Groq STT requested but GROQ_API_KEY is not configured. This should have been caught during session load.`,
+          );
+        }
 
-    if (!this.graphWithAudioInputAssemblyAI) {
-      console.log('  → Creating Assembly.AI STT graph (first use)...');
-      this.graphWithAudioInputAssemblyAI = await InworldGraphWrapper.create({
-        ...baseAudioConfig,
-        useAssemblyAI: true,
-        assemblyAIApiKey: this.env.assemblyAIApiKey,
-      });
-      console.log('  ✓ Assembly.AI STT graph created');
-    } else {
-      console.log(`  → Using Assembly.AI STT graph`);
+        if (!this.graphWithAudioInputGroq) {
+          console.log('  → Creating Groq Whisper STT graph (first use)...');
+          this.graphWithAudioInputGroq = await InworldGraphWrapper.create({
+            ...baseAudioConfig,
+            useGroq: true,
+            groqApiKey: this.env.groqApiKey,
+            groqModel: this.env.groqModel,
+          });
+          console.log('  ✓ Groq Whisper STT graph created');
+        } else {
+          console.log(`  → Using Groq Whisper STT graph`);
+        }
+        return this.graphWithAudioInputGroq;
+
+      case 'assemblyai':
+        if (!this.env.assemblyAIApiKey) {
+          // This should not happen since we validate at load time, but defensive check
+          throw new Error(
+            `Assembly.AI STT requested but ASSEMBLY_AI_API_KEY is not configured. This should have been caught during session load.`,
+          );
+        }
+
+        if (!this.graphWithAudioInputAssemblyAI) {
+          console.log('  → Creating Assembly.AI STT graph (first use)...');
+          this.graphWithAudioInputAssemblyAI = await InworldGraphWrapper.create(
+            {
+              ...baseAudioConfig,
+              useAssemblyAI: true,
+              assemblyAIApiKey: this.env.assemblyAIApiKey,
+            },
+          );
+          console.log('  ✓ Assembly.AI STT graph created');
+        } else {
+          console.log(`  → Using Assembly.AI STT graph`);
+        }
+        return this.graphWithAudioInputAssemblyAI;
+
+      case 'inworld':
+      default:
+        if (!this.graphWithAudioInputInworld) {
+          console.log('  → Creating Inworld Remote STT graph (first use)...');
+          this.graphWithAudioInputInworld = await InworldGraphWrapper.create({
+            ...baseAudioConfig,
+          });
+          console.log('  ✓ Inworld Remote STT graph created');
+        } else {
+          console.log(`  → Using Inworld Remote STT graph`);
+        }
+        return this.graphWithAudioInputInworld;
     }
-    return this.graphWithAudioInputAssemblyAI;
   }
 
   async load(req: any, res: any) {
@@ -131,21 +196,27 @@ export class InworldApp {
 
     const sessionId = req.query.sessionId;
     const systemMessageId = v4();
-    const sttService = req.body.sttService || 'assemblyai'; // Default to Assembly.AI
+    const sttService = req.body.sttService || 'inworld'; // Get STT service from request
 
     // Validate STT service availability BEFORE creating session
-    if (sttService !== 'assemblyai') {
+    if (sttService === 'groq' && !this.env.groqApiKey) {
+      const availableServices = ['inworld'];
+      if (this.env.assemblyAIApiKey) availableServices.push('assemblyai');
+
       return res.status(400).json({
-        error: `Only Assembly.AI STT is supported`,
-        availableServices: ['assemblyai'],
+        error: `Groq STT requested but GROQ_API_KEY is not configured`,
+        availableServices,
         requestedService: sttService,
       });
     }
 
-    if (!this.env.assemblyAIApiKey) {
+    if (sttService === 'assemblyai' && !this.env.assemblyAIApiKey) {
+      const availableServices = ['inworld'];
+      if (this.env.groqApiKey) availableServices.push('groq');
+
       return res.status(400).json({
         error: `Assembly.AI STT requested but ASSEMBLY_AI_API_KEY is not configured`,
-        availableServices: ['assemblyai'],
+        availableServices,
         requestedService: sttService,
       });
     }
@@ -206,7 +277,9 @@ export class InworldApp {
     this.connections = {};
     this.graphWithTextInput.destroy();
 
-    // Destroy pre-created audio graph
+    // Destroy all pre-created audio graphs
+    this.graphWithAudioInputInworld?.destroy();
+    this.graphWithAudioInputGroq?.destroy();
     this.graphWithAudioInputAssemblyAI?.destroy();
 
     stopInworldRuntime();
