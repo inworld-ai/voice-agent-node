@@ -22,10 +22,9 @@ export class InworldApp {
 
   vadClient: any;
 
-  graphWithTextInput: InworldGraphWrapper;
-
-  // Lazily-created graph for Assembly.AI STT
-  private graphWithAudioInputAssemblyAI?: InworldGraphWrapper;
+  // Cached graphs by voiceId (created lazily on first use)
+  private textGraphs: Map<string, InworldGraphWrapper> = new Map();
+  private audioGraphs: Map<string, InworldGraphWrapper> = new Map();
 
   // Environment configuration for lazy graph creation
   private env: ReturnType<typeof parseEnvironmentVariables>;
@@ -53,66 +52,68 @@ export class InworldApp {
       modelPath: this.vadModelPath,
     });
 
-    // Create text-only graph
-    this.graphWithTextInput = await InworldGraphWrapper.create({
-      apiKey: this.apiKey,
-      llmModelName: this.llmModelName,
-      llmProvider: this.llmProvider,
-      voiceId: this.voiceId,
-      connections: this.connections,
-      graphVisualizationEnabled: this.graphVisualizationEnabled,
-      disableAutoInterruption: this.disableAutoInterruption,
-      ttsModelId: this.ttsModelId,
-      vadClient: this.vadClient,
-    });
-
-    console.log('\n✓ Text input graph initialized');
     console.log(
-      '✓ Audio input graph will be created lazily when first requested\n',
+      '\n✓ Graphs will be created lazily per voice on first use\n',
     );
 
     console.log('✓ STT service: Assembly.AI\n');
   }
 
   /**
-   * Get the Assembly.AI audio graph.
-   * Graph is created lazily on first request.
+   * Get the text graph for a specific voice.
+   * Graph is created lazily on first request for this voice.
    */
-  async getGraphForSTTService(
-    _sttService?: string,
-  ): Promise<InworldGraphWrapper> {
-    const baseAudioConfig = {
-      apiKey: this.apiKey,
-      llmModelName: this.llmModelName,
-      llmProvider: this.llmProvider,
-      voiceId: this.voiceId,
-      connections: this.connections,
-      withAudioInput: true,
-      graphVisualizationEnabled: this.graphVisualizationEnabled,
-      disableAutoInterruption: this.disableAutoInterruption,
-      ttsModelId: this.ttsModelId,
-      vadClient: this.vadClient,
-    };
+  async getTextGraph(voiceId: string): Promise<InworldGraphWrapper> {
+    if (!this.textGraphs.has(voiceId)) {
+      console.log(`  → Creating text graph for voice: ${voiceId}...`);
+      const graph = await InworldGraphWrapper.create({
+        apiKey: this.apiKey,
+        llmModelName: this.llmModelName,
+        llmProvider: this.llmProvider,
+        voiceId: voiceId,
+        connections: this.connections,
+        graphVisualizationEnabled: this.graphVisualizationEnabled,
+        disableAutoInterruption: this.disableAutoInterruption,
+        ttsModelId: this.ttsModelId,
+        vadClient: this.vadClient,
+      });
+      this.textGraphs.set(voiceId, graph);
+      console.log(`  ✓ Text graph created for voice: ${voiceId}`);
+    }
+    return this.textGraphs.get(voiceId)!;
+  }
 
+  /**
+   * Get the audio graph for a specific voice.
+   * Graph is created lazily on first request for this voice.
+   */
+  async getAudioGraph(voiceId: string): Promise<InworldGraphWrapper> {
     if (!this.env.assemblyAIApiKey) {
-      // This should not happen since we validate at load time, but defensive check
       throw new Error(
         `Assembly.AI STT requested but ASSEMBLY_AI_API_KEY is not configured. This should have been caught during session load.`,
       );
     }
 
-    if (!this.graphWithAudioInputAssemblyAI) {
-      console.log('  → Creating Assembly.AI STT graph (first use)...');
-      this.graphWithAudioInputAssemblyAI = await InworldGraphWrapper.create({
-        ...baseAudioConfig,
+    if (!this.audioGraphs.has(voiceId)) {
+      console.log(`  → Creating audio graph for voice: ${voiceId}...`);
+      const graph = await InworldGraphWrapper.create({
+        apiKey: this.apiKey,
+        llmModelName: this.llmModelName,
+        llmProvider: this.llmProvider,
+        voiceId: voiceId,
+        connections: this.connections,
+        withAudioInput: true,
+        graphVisualizationEnabled: this.graphVisualizationEnabled,
+        disableAutoInterruption: this.disableAutoInterruption,
+        ttsModelId: this.ttsModelId,
+        vadClient: this.vadClient,
         useAssemblyAI: true,
         assemblyAIApiKey: this.env.assemblyAIApiKey,
       });
-      console.log('  ✓ Assembly.AI STT graph created');
-    } else {
-      console.log(`  → Using Assembly.AI STT graph`);
+      this.audioGraphs.set(voiceId, graph);
+      console.log(`  ✓ Audio graph created for voice: ${voiceId}`);
     }
-    return this.graphWithAudioInputAssemblyAI;
+    return this.audioGraphs.get(voiceId)!;
   }
 
   async load(req: any, res: any) {
@@ -150,8 +151,10 @@ export class InworldApp {
       });
     }
 
+    const sessionVoiceId = req.body.voiceId || this.voiceId;
+
     console.log(
-      `\n[Session ${sessionId}] Creating new session with STT: ${sttService}`,
+      `\n[Session ${sessionId}] Creating new session with STT: ${sttService}, Voice: ${sessionVoiceId}`,
     );
 
     this.connections[sessionId] = {
@@ -166,7 +169,7 @@ export class InworldApp {
         ],
         agent,
         userName: req.body.userName,
-        voiceId: req.body.voiceId || this.voiceId, // Use request voiceId or default
+        voiceId: sessionVoiceId, // Use request voiceId or default
       },
       ws: null,
       sttService, // Store STT service choice for this session
@@ -202,12 +205,20 @@ export class InworldApp {
     res.end(JSON.stringify({ message: 'Session unloaded' }));
   }
 
-  shutdown() {
+  async shutdown() {
     this.connections = {};
-    this.graphWithTextInput.destroy();
 
-    // Destroy pre-created audio graph
-    this.graphWithAudioInputAssemblyAI?.destroy();
+    // Destroy all text graphs
+    for (const graph of this.textGraphs.values()) {
+      await graph.destroy();
+    }
+    this.textGraphs.clear();
+
+    // Destroy all audio graphs
+    for (const graph of this.audioGraphs.values()) {
+      await graph.destroy();
+    }
+    this.audioGraphs.clear();
 
     stopInworldRuntime();
   }

@@ -3,6 +3,7 @@ export type STTService = 'assemblyai';
 export type ConfigurationSession = {
   agent?: ConfigurationAgent;
   user?: ConfigurationUser;
+  voiceId?: string;
   sttService?: STTService;
 };
 
@@ -26,6 +27,7 @@ export type Configuration = {
   agent?: ConfigurationAgent;
   scene?: ConfigurationScene;
   user?: ConfigurationUser;
+  voiceId?: string;
   sttService?: STTService;
 };
 

@@ -47,12 +47,16 @@ export class MessageHandler {
           sessionId,
         } as TextInput;
 
+        const connection = this.inworldApp.connections[sessionId];
+        const voiceId = connection?.state?.voiceId || 'Dennis';
+        const textGraph = await this.inworldApp.getTextGraph(voiceId);
+
         this.addToQueue(() =>
           this.executeGraph({
             sessionId,
             input: textInput,
             interactionId: textInteractionId,
-            graphWrapper: this.inworldApp.graphWithTextInput,
+            graphWrapper: textGraph,
           }),
         );
 
@@ -107,11 +111,10 @@ export class MessageHandler {
           sessionId,
         };
 
-        // Get the appropriate graph based on this session's STT service selection
+        // Get the appropriate graph based on this session's voice
         // Graph will be created lazily if it doesn't exist yet
-        const graphWrapper = await this.inworldApp.getGraphForSTTService(
-          connection.sttService,
-        );
+        const voiceId = connection.state.voiceId || 'Dennis';
+        const graphWrapper = await this.inworldApp.getAudioGraph(voiceId);
 
         // Start graph execution in the background - it will consume from the stream
         connection.currentAudioGraphExecution =
