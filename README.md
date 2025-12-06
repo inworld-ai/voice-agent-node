@@ -128,7 +128,7 @@ flowchart TB
         TextInput["TextInput"]
         TextInputSafetyExt["TextInputSafetyExtractor"]
         InputSafety["Input Safety Subgraph"]
-        TextInputStateUpdater["TextInputStateUpdater<br>reports to client"]
+        TextInputStateUpdater["TextInputStateUpdater"]
         TextInputMerger["TextInputSafetyMerger"]
         DialogPrompt["DialogPromptBuilder"]
         LLM["LLM"]
