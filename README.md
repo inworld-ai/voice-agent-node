@@ -109,52 +109,77 @@ The voice agent server uses Inworld's Graph Framework with two main processing p
 ### Pipeline Overview
 
 ```mermaid
+---
+config:
+  layout: dagre
+---
 flowchart TB
-    subgraph AUDIO["AUDIO INPUT PIPELINE"]
-        AudioInput[AudioInput]
-        
-        subgraph OPT1["Assembly.AI STT Pipeline"]
-            AssemblyAI[AssemblyAI STT]
-            TranscriptExtractor[TranscriptExtractor]
-            SpeechNotif1[SpeechCompleteNotifier<br/>terminal node]
-            
-            AssemblyAI -->|interaction_complete| TranscriptExtractor
-            AssemblyAI -->|interaction_complete| SpeechNotif1
-            AssemblyAI -->|stream_exhausted=false<br/>loop| AssemblyAI
-        end
-        
-        AudioInput --> OPT1
-        
-        TranscriptExtractor --> InteractionQueue
-    end
-    
-    subgraph TEXT["TEXT PROCESSING & TTS PIPELINE"]
-        TextInput[TextInput]
-        DialogPrompt[DialogPromptBuilder]
-        LLM[LLM]
-        TextChunk[TextChunking]
-        TextAgg[TextAggregator]
-        TTS[TTS<br/>end]
-        StateUpdate[StateUpdate]
-        
-        TextInput --> DialogPrompt
-        DialogPrompt --> LLM
-        LLM --> TextChunk
-        LLM --> TextAgg
-        TextChunk --> TTS
-        TextAgg --> StateUpdate
-        StateUpdate -.->|loop optional| InteractionQueue
-    end
-    
-    InteractionQueue -->|text.length>0| TextInput
+ subgraph STT["Assembly.AI STT Pipeline"]
+        AssemblyAI["AssemblyAI STT"]
+        TranscriptExtractor["TranscriptExtractor"]
+        SpeechNotif1["SpeechCompleteNotifier<br>terminal node"]
+  end
+ subgraph AUDIO["AUDIO INPUT PIPELINE (withAudioInput=true)"]
+        AudioInput["AudioInput"]
+        STT
+        InteractionQueue["InteractionQueue"]
+  end
+ subgraph TEXT["TEXT INPUT PATH (common for both audio and text)"]
+        TextInput["TextInput"]
+        TextInputSafetyExt["TextInputSafetyExtractor"]
+        InputSafety["Input Safety Subgraph"]
+        TextInputStateUpdater["TextInputStateUpdater"]
+        TextInputMerger["TextInputSafetyMerger"]
+        DialogPrompt["DialogPromptBuilder"]
+        LLM["LLM"]
+        TextAgg["TextAggregator"]
+        OutputSafety["Output Safety Subgraph"]
+        SafetyTextExt["SafetyTextExtractor"]
+        InputCanned["Input Safety<br>Canned Response"]
+        OutputCanned["Output Safety<br>Canned Response"]
+  end
+ subgraph OUTPUT["TTS OUTPUT & STATE"]
+        ResponseAgg["ResponseAggregatorProxy"]
+        TextChunk["TextChunking"]
+        TTS["TTS<br>end"]
+        StateUpdate["StateUpdate"]
+  end
+    AssemblyAI -- interaction_complete --> TranscriptExtractor & SpeechNotif1
+    AssemblyAI -- "stream_exhausted!=true<br>loop optional" --> AssemblyAI
+    AudioInput --> STT
+    TranscriptExtractor --> InteractionQueue
+    InteractionQueue -- text exists --> TextInput
+    TextInput --> TextInputSafetyExt & TextInputStateUpdater
+    TextInputSafetyExt --> InputSafety
+    TextInputStateUpdater --> TextInputMerger
+    InputSafety --> TextInputMerger
+    TextInputMerger -- "isSafe=true" --> DialogPrompt
+    TextInputMerger -- "isSafe=false" --> InputCanned
+    InputCanned --> ResponseAgg
+    DialogPrompt --> LLM
+    LLM --> TextAgg
+    TextAgg --> OutputSafety
+    OutputSafety -- "isSafe=true" --> SafetyTextExt
+    OutputSafety -- "isSafe=false" --> OutputCanned
+    SafetyTextExt --> ResponseAgg
+    OutputCanned --> ResponseAgg
+    ResponseAgg --> TextChunk & StateUpdate
+    TextChunk --> TTS
+    StateUpdate -. loop optional .-> InteractionQueue
 
     style SpeechNotif1 fill:#f9f,stroke:#333,stroke-width:2px
+    style InputSafety fill:#ff9,stroke:#333,stroke-width:2px
+    style OutputSafety fill:#ff9,stroke:#333,stroke-width:2px
     style TTS fill:#9f9,stroke:#333,stroke-width:2px
 ```
 
 ### STT Provider
 
 The server uses **Assembly.AI** as the Speech-to-Text provider, which provides high accuracy with built-in speech segmentation.
+
+## Safety Features
+
+The voice agent includes built-in safety filtering to detect and block inappropriate content. See [SAFETY.md](SAFETY.md) for detailed information on configuring and using safety features.
 
 ## Troubleshooting
 
