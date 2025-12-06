@@ -41,7 +41,7 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //
 // clang-format off
 //
-//  Graph Structure:
+//  Graph Structure (based on actual edges in code):
 //
 //  ┌─────────────────────────────────────────────────────────────────────────────┐
 //  │                        AUDIO INPUT PATH (withAudioInput=true)                │
@@ -51,7 +51,7 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //      │
 //      └──> assemblyAISTTNode
 //              │
-//              ├──<──┐ [stream_exhausted !== true] (loop)
+//              ├──<──┐ [stream_exhausted !== true] (loop, optional)
 //              │     │
 //              ├──> [interaction_complete === true] speechCompleteNotifierNode (terminal)
 //              │
@@ -59,55 +59,25 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //                      │
 //                      └──> interactionQueueNode
 //                              │
-//                              └──> [text exists] textInputNode (proxy)
+//                              └──> [text exists] textInputNode
 //                                      │
-//                                      ├──> textInputSafetyExtractorNode (extracts text for safety)
-//                                      │       │
-//                                      │       └──> inputSafetySubgraph (optional - may not run for audio)
-//                                      │               │
-//                                      │               ├──> textClassifierNode ──┐
-//                                      │               │                          │
-//                                      │               ├──> keywordMatcherNode ──┤
-//                                      │               │                          │
-//                                      │               └──> safetyAggregatorNode <┘
-//                                      │                       │
-//                                      │                       └──> textInputSafetyMergerNode (optional)
-//                                      │
-//                                      └──> textInputStateUpdaterNode (updates state, reports to client)
-//                                              │
-//                                              └──> textInputSafetyMergerNode
-//                                                      │ (merges State with SafetyResult, adds isSafe)
-//                                                      │
-//                                                      ├──> [isSafe === true] dialogPromptBuilderNode
-//                                                      │       │
-//                                                      │       └──> llmNode
-//                                                      │
-//                                                      └──> [isSafe === false] inputSafetyFailureCannedResponseNode
-//                                                              │
-//                                                              └──> responseAggregatorProxyNode
+//                                      └──> (joins TEXT INPUT PATH below)
 //
 //  ┌─────────────────────────────────────────────────────────────────────────────┐
-//  │                        TEXT INPUT PATH (withAudioInput=false)               │
+//  │                        TEXT INPUT PATH (common for both audio and text)      │
 //  └─────────────────────────────────────────────────────────────────────────────┘
 //
-//  textInputNode (proxy)
+//  textInputNode
 //      │
-//      ├──> textInputSafetyExtractorNode (extracts text for safety)
+//      ├──> textInputSafetyExtractorNode
 //      │       │
 //      │       └──> inputSafetySubgraph
 //      │               │
-//      │               ├──> textClassifierNode ──┐
-//      │               │                          │
-//      │               ├──> keywordMatcherNode ──┤
-//      │               │                          │
-//      │               └──> safetyAggregatorNode <┘
-//      │                       │
-//      │                       └──> textInputSafetyMergerNode
+//      │               └──> textInputSafetyMergerNode
 //      │
-//      └──> textInputStateUpdaterNode (updates state, reports to client)
+//      └──> textInputStateUpdaterNode
 //              │
 //              └──> textInputSafetyMergerNode
-//                      │ (merges State with SafetyResult, adds isSafe)
 //                      │
 //                      ├──> [isSafe === true] dialogPromptBuilderNode
 //                      │       │
@@ -117,19 +87,13 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //                      │                       │
 //                      │                       └──> outputSafetySubgraph
 //                      │                               │
-//                      │                               ├──> textClassifierNode ──┐
-//                      │                               │                          │
-//                      │                               ├──> keywordMatcherNode ──┤
-//                      │                               │                          │
-//                      │                               └──> safetyAggregatorNode <┘
+//                      │                               ├──> [isSafe === true] safetyTextExtractorNode
+//                      │                               │       │
+//                      │                               │       └──> responseAggregatorProxyNode
+//                      │                               │
+//                      │                               └──> [isSafe === false] outputSafetyFailureCannedResponseNode
 //                      │                                       │
-//                      │                                       ├──> [isSafe === true] safetyTextExtractorNode
-//                      │                                       │       │
-//                      │                                       │       └──> responseAggregatorProxyNode
-//                      │                                       │
-//                      │                                       └──> [isSafe === false] outputSafetyFailureCannedResponseNode
-//                      │                                               │
-//                      │                                               └──> responseAggregatorProxyNode
+//                      │                                       └──> responseAggregatorProxyNode
 //                      │
 //                      └──> [isSafe === false] inputSafetyFailureCannedResponseNode
 //                              │
@@ -139,21 +103,17 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //  │                        COMMON OUTPUT PATH                                    │
 //  └─────────────────────────────────────────────────────────────────────────────┘
 //
-//  (From text input path: llmNode -> textAggregatorNode -> outputSafetySubgraph)
-//  (From input safety failure: inputSafetyFailureCannedResponseNode)
-//  (From output safety failure: outputSafetyFailureCannedResponseNode)
-//          │
-//          └──> responseAggregatorProxyNode
-//                  │
-//                  ├──> textChunkingNode
-//                  │       │
-//                  │       └──> ttsNode (END NODE)
-//                  │
-//                  └──> stateUpdateNode
-//                          │
-//                          └──<──┐ [loop] (when withAudioInput=true)
-//                                │
-//                                └──> interactionQueueNode
+//  responseAggregatorProxyNode
+//      │
+//      ├──> textChunkingNode
+//      │       │
+//      │       └──> ttsNode (END NODE)
+//      │
+//      └──> stateUpdateNode
+//              │
+//              └──<──┐ [loop, optional] (when withAudioInput=true)
+//                    │
+//                    └──> interactionQueueNode
 //
 //  Legend:
 //  ───> Required edge
