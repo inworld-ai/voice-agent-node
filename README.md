@@ -126,35 +126,70 @@ flowchart TB
         AudioInput --> OPT1
         
         TranscriptExtractor --> InteractionQueue
+        InteractionQueue -->|text exists| TextInputProxy[TextInput<br/>proxy]
     end
     
-    subgraph TEXT["TEXT PROCESSING & TTS PIPELINE"]
+    subgraph TEXT["TEXT INPUT PATH"]
         TextInput[TextInput]
+        TextInputSafetyExt[TextInputSafetyExtractor]
+        InputSafety[Input Safety Subgraph]
+        TextInputStateUpdater[TextInputStateUpdater<br/>reports to client]
+        TextInputMerger[TextInputSafetyMerger]
+        
+        TextInput --> TextInputSafetyExt
+        TextInputSafetyExt --> InputSafety
+        TextInput --> TextInputStateUpdater
+        TextInputStateUpdater --> TextInputMerger
+        InputSafety --> TextInputMerger
+    end
+    
+    subgraph PROCESSING["PROCESSING & OUTPUT SAFETY"]
         DialogPrompt[DialogPromptBuilder]
         LLM[LLM]
-        TextChunk[TextChunking]
         TextAgg[TextAggregator]
+        OutputSafety[Output Safety Subgraph]
+        SafetyTextExt[SafetyTextExtractor]
+        ResponseAgg[ResponseAggregator]
+        
+        TextInputMerger -->|isSafe=true| DialogPrompt
+        TextInputMerger -->|isSafe=false| InputCanned[Input Safety<br/>Canned Response]
+        InputCanned --> ResponseAgg
+        DialogPrompt --> LLM
+        LLM --> TextAgg
+        TextAgg --> OutputSafety
+        OutputSafety -->|isSafe=true| SafetyTextExt
+        OutputSafety -->|isSafe=false| OutputCanned[Output Safety<br/>Canned Response]
+        SafetyTextExt --> ResponseAgg
+        OutputCanned --> ResponseAgg
+    end
+    
+    subgraph OUTPUT["OUTPUT & STATE"]
+        TextChunk[TextChunking]
         TTS[TTS<br/>end]
         StateUpdate[StateUpdate]
         
-        TextInput --> DialogPrompt
-        DialogPrompt --> LLM
-        LLM --> TextChunk
-        LLM --> TextAgg
+        ResponseAgg --> TextChunk
+        ResponseAgg --> StateUpdate
         TextChunk --> TTS
-        TextAgg --> StateUpdate
         StateUpdate -.->|loop optional| InteractionQueue
     end
     
-    InteractionQueue -->|text.length>0| TextInput
+    InteractionQueue -->|text exists| TextInputProxy
+    TextInputProxy --> TextInputStateUpdater
 
     style SpeechNotif1 fill:#f9f,stroke:#333,stroke-width:2px
     style TTS fill:#9f9,stroke:#333,stroke-width:2px
+    style InputSafety fill:#ff9,stroke:#333,stroke-width:2px
+    style OutputSafety fill:#ff9,stroke:#333,stroke-width:2px
 ```
 
 ### STT Provider
 
 The server uses **Assembly.AI** as the Speech-to-Text provider, which provides high accuracy with built-in speech segmentation.
+
+## Safety Features
+
+The voice agent includes built-in safety filtering to detect and block inappropriate content. See [SAFETY.md](SAFETY.md) for detailed information on configuring and using safety features.
 
 ## Troubleshooting
 

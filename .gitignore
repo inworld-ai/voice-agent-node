@@ -54,3 +54,6 @@ server/cloudbuild.yaml
 client/Dockerfile
 client/cloudbuild.yaml
 client/nginx.conf
+
+# Safety keyword lists (users should provide their own)
+server/config/profanity.json
