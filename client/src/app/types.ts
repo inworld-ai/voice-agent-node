@@ -1,5 +1,13 @@
 export type STTService = 'assemblyai';
 
+// Voice type definition used by the voice selector
+export type Voice = {
+  voiceId: string;
+  displayName: string;
+  description: string;
+  languages: string[];
+};
+
 export type ConfigurationSession = {
   agent?: ConfigurationAgent;
   user?: ConfigurationUser;

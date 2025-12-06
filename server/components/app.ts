@@ -151,6 +151,8 @@ export class InworldApp {
       });
     }
 
+    // Get voice from client request (set by template selection)
+    // Falls back to DEFAULT_VOICE_ID if client doesn't send one
     const sessionVoiceId = req.body.voiceId || this.voiceId;
 
     console.log(

@@ -354,6 +354,7 @@ function App() {
 
   const openConnection = useCallback(async () => {
     key = v4();
+    // Get configuration including voiceId from selected template
     const { agent, user, voiceId } = formMethods.getValues();
 
     setChatting(true);

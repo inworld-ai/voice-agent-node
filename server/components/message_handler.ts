@@ -48,7 +48,9 @@ export class MessageHandler {
         } as TextInput;
 
         const connection = this.inworldApp.connections[sessionId];
-        const voiceId = connection?.state?.voiceId || 'Dennis';
+        // Get voice from session state (set by client from template config)
+        // Fallback to DEFAULT_VOICE_ID if not provided (should rarely happen)
+        const voiceId = connection?.state?.voiceId || 'Pixie';
         const textGraph = await this.inworldApp.getTextGraph(voiceId);
 
         this.addToQueue(() =>
@@ -111,9 +113,9 @@ export class MessageHandler {
           sessionId,
         };
 
-        // Get the appropriate graph based on this session's voice
-        // Graph will be created lazily if it doesn't exist yet
-        const voiceId = connection.state.voiceId || 'Dennis';
+        // Get the appropriate audio graph based on this session's voice
+        // Voice is set by client from template config, fallback to DEFAULT_VOICE_ID
+        const voiceId = connection.state.voiceId || 'Pixie';
         const graphWrapper = await this.inworldApp.getAudioGraph(voiceId);
 
         // Start graph execution in the background - it will consume from the stream
