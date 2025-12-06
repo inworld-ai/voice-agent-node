@@ -124,11 +124,13 @@ export class InworldGraphWrapper {
       ttsModelId,
     } = props;
 
-    // Create unique postfix based on audio input and STT provider
+    // Create unique postfix based on audio input, STT provider, and voice
+    // Include voiceId to ensure unique node IDs when multiple graphs exist
     let postfix = withAudioInput ? '-with-audio-input' : '-with-text-input';
     if (withAudioInput) {
       postfix += '-assembly-ai';
     }
+    postfix += `-${voiceId}`;
 
     const dialogPromptBuilderNode = new DialogPromptBuilderNode({
       id: `dialog-prompt-builder-node${postfix}`,

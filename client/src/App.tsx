@@ -354,7 +354,8 @@ function App() {
 
   const openConnection = useCallback(async () => {
     key = v4();
-    const { agent, user } = formMethods.getValues();
+    // Get configuration including voiceId from selected template
+    const { agent, user, voiceId } = formMethods.getValues();
 
     setChatting(true);
     setUserName(user?.name!);
@@ -365,6 +366,7 @@ function App() {
       body: JSON.stringify({
         userName: user?.name,
         agent,
+        voiceId,
         sttService: 'assemblyai', // Always use Assembly.AI (only supported STT service)
       }),
     });
