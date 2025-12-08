@@ -2,6 +2,7 @@ import {
   Graph,
   GraphBuilder,
   KeywordMatcherNode,
+  KnowledgeNode,
   ProxyNode,
   RandomCannedTextNode,
   RemoteEmbedderComponent,
@@ -16,6 +17,7 @@ import {
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { v7 } from 'uuid';
 
 import {
   INPUT_SAMPLE_RATE,
@@ -44,7 +46,7 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //  Graph Structure (based on actual edges in code):
 //
 //  ┌─────────────────────────────────────────────────────────────────────────────┐
-//  │                        AUDIO INPUT PATH (withAudioInput=true)                │
+//  │                   AUDIO INPUT PATH (withAudioInput=true)                    │
 //  └─────────────────────────────────────────────────────────────────────────────┘
 //
 //  audioInputNode
@@ -64,16 +66,22 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //                                      └──> (joins TEXT INPUT PATH below)
 //
 //  ┌─────────────────────────────────────────────────────────────────────────────┐
-//  │                        TEXT INPUT PATH (common for both audio and text)      │
+//  │              TEXT INPUT PATH (common for both audio and text)               │
 //  └─────────────────────────────────────────────────────────────────────────────┘
 //
 //  textInputNode
 //      │
 //      ├──> textInputSafetyExtractorNode
 //      │       │
-//      │       └──> inputSafetySubgraph
+//      │       └──> inputSafetySubgraph.subgraphNode
 //      │               │
-//      │               └──> textInputSafetyMergerNode
+//      │               ├──> textInputSafetyMergerNode
+//      │               │
+//      │               └──> [isSafe === true] inputSafetyTextExtractorNode (if knowledge enabled)
+//      │                       │
+//      │                       └──> knowledgeNode
+//      │                               │
+//      │                               └──> dialogPromptBuilderNode
 //      │
 //      └──> textInputStateUpdaterNode
 //              │
@@ -85,7 +93,7 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //                      │               │
 //                      │               └──> textAggregatorNode
 //                      │                       │
-//                      │                       └──> outputSafetySubgraph
+//                      │                       └──> outputSafetySubgraph.subgraphNode
 //                      │                               │
 //                      │                               ├──> [isSafe === true] safetyTextExtractorNode
 //                      │                               │       │
@@ -100,7 +108,7 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //                              └──> responseAggregatorProxyNode
 //
 //  ┌─────────────────────────────────────────────────────────────────────────────┐
-//  │                        COMMON OUTPUT PATH                                    │
+//  │                        COMMON OUTPUT PATH                                   │
 //  └─────────────────────────────────────────────────────────────────────────────┘
 //
 //  responseAggregatorProxyNode
@@ -140,8 +148,10 @@ function createSafetySubgraph(
 } {
   // Default location: server/config/safety_classifier_model_weights.json
   // Users can override via SAFETY_CLASSIFIER_MODEL_PATH environment variable
+  // Use __dirname to get path relative to this file location (more reliable than process.cwd())
   const DEFAULT_TEXT_CLASSIFIER_WEIGHTS_MODEL_PATH = path.resolve(
-    process.cwd(),
+    __dirname,
+    '..',
     'config',
     'safety_classifier_model_weights.json',
   );
@@ -152,7 +162,8 @@ function createSafetySubgraph(
   // Default location: server/config/profanity.json
   // Users can override via SAFETY_KEYWORDS_PATH environment variable
   const DEFAULT_KEYWORD_MATCHER_CONFIG_PATH = path.resolve(
-    process.cwd(),
+    __dirname,
+    '..',
     'config',
     'profanity.json',
   );
@@ -361,6 +372,52 @@ export class InworldGraphWrapper {
       id: `text-input-safety-merger-node${postfix}`,
     });
 
+    // Load knowledge records from JSON file
+    // Use __dirname to get path relative to this file location (more reliable than process.cwd())
+    const DEFAULT_KNOWLEDGE_PATH = path.resolve(
+      __dirname,
+      '..',
+      'config',
+      'knowledge.json',
+    );
+    const knowledgePath =
+      process.env.KNOWLEDGE_PATH || DEFAULT_KNOWLEDGE_PATH;
+    
+    let knowledgeRecords: string[] = [];
+    try {
+      const knowledgeData = JSON.parse(fs.readFileSync(knowledgePath, 'utf8'));
+      if (Array.isArray(knowledgeData)) {
+        knowledgeRecords = knowledgeData;
+      } else {
+        console.warn(
+          `Knowledge file ${knowledgePath} is not an array. Knowledge retrieval will be disabled.`,
+        );
+      }
+    } catch (error: any) {
+      console.warn(
+        `Could not load knowledge from ${knowledgePath}: ${error.message}. ` +
+          `Knowledge retrieval will be disabled. Please create ${knowledgePath} or set KNOWLEDGE_PATH environment variable.`,
+      );
+    }
+
+    // Create knowledge node
+    const knowledgeNode = new KnowledgeNode({
+      id: `knowledge-node${postfix}`,
+      knowledgeId: `knowledge/${v7()}`,
+      knowledgeRecords,
+      maxCharsPerChunk: 1000,
+      maxChunksPerDocument: 10,
+      retrievalConfig: {
+        threshold: 0.8, // Lower threshold to retrieve more results
+        topK: 5, // Return up to 5 most relevant records
+      },
+    });
+
+    // Create input safety text extractor for knowledge retrieval
+    const inputSafetyTextExtractorNode = new SafetyTextExtractorNode({
+      id: `input-safety-text-extractor-node${postfix}`,
+    });
+
     const inputSafetyFailureCannedResponseNode = new RandomCannedTextNode({
       id: `input-safety-failure-canned-response-node${postfix}`,
       cannedPhrases: inputSafetyCannedPhrases,
@@ -392,21 +449,49 @@ export class InworldGraphWrapper {
       .addNode(ttsNode)
       .addNode(stateUpdateNode);
 
+    // Add knowledge nodes only if knowledge records are available
+    if (knowledgeRecords.length > 0) {
+      graphBuilder
+        .addNode(inputSafetyTextExtractorNode)
+        .addNode(knowledgeNode);
+    }
+
     graphBuilder
       .addEdge(textInputNode, textInputSafetyExtractorNode)
       .addEdge(textInputSafetyExtractorNode, inputSafetySubgraph.subgraphNode)
       .addEdge(textInputNode, textInputStateUpdaterNode)
       .addEdge(textInputStateUpdaterNode, textInputSafetyMergerNode)
-      .addEdge(inputSafetySubgraph.subgraphNode, textInputSafetyMergerNode)
-      .addEdge(textInputSafetyMergerNode, dialogPromptBuilderNode, {
+      .addEdge(inputSafetySubgraph.subgraphNode, textInputSafetyMergerNode);
+
+    // Add knowledge edges only if knowledge records are available
+    if (knowledgeRecords.length > 0) {
+      graphBuilder
+        .addEdge(inputSafetySubgraph.subgraphNode, inputSafetyTextExtractorNode, {
+          condition: async (input: any) => {
+            return input?.isSafe === true;
+          },
+        })
+        .addEdge(inputSafetyTextExtractorNode, knowledgeNode)
+        .addEdge(textInputSafetyMergerNode, dialogPromptBuilderNode, {
+          condition: async (input: any) => {
+            return input?.isSafe === true;
+          },
+        })
+        .addEdge(knowledgeNode, dialogPromptBuilderNode);
+    } else {
+      // If no knowledge, connect safety merger directly to dialog prompt builder
+      graphBuilder.addEdge(textInputSafetyMergerNode, dialogPromptBuilderNode, {
         condition: async (input: any) => {
           return input?.isSafe === true;
-        }
-      })
+        },
+      });
+    }
+
+    graphBuilder
       .addEdge(textInputSafetyMergerNode, inputSafetyFailureCannedResponseNode, {
         condition: async (input: any) => {
           return input?.isSafe === false;
-        }
+        },
       })
       .addEdge(inputSafetyFailureCannedResponseNode, responseAggregatorProxyNode, {
         optional: true,
