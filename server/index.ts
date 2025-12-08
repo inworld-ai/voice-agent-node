@@ -110,10 +110,10 @@ server.listen(WS_APP_PORT, async () => {
   console.log(`Server is running on port ${WS_APP_PORT}`);
 });
 
-async function done() {
+function done() {
   console.log('Server is closing');
 
-  await inworldApp.shutdown();
+  inworldApp.shutdown();
 
   process.exit(0);
 }

@@ -24,6 +24,7 @@ import { SpeechCompleteNotifierNode } from './nodes/speech_complete_notifier_nod
 import { StateUpdateNode } from './nodes/state_update_node';
 import { TextInputNode } from './nodes/text_input_node';
 import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
+import { TTSRequestBuilderNode } from './nodes/tts_request_builder_node';
 
 //
 // A complete audio-to-speech pipeline with stream slicer and LLM:
@@ -124,13 +125,12 @@ export class InworldGraphWrapper {
       ttsModelId,
     } = props;
 
-    // Create unique postfix based on audio input, STT provider, and voice
-    // Include voiceId to ensure unique node IDs when multiple graphs exist
+    // Create unique postfix based on audio input and STT provider
+    // Voice is now handled dynamically by TTSRequestBuilderNode
     let postfix = withAudioInput ? '-with-audio-input' : '-with-text-input';
     if (withAudioInput) {
       postfix += '-assembly-ai';
     }
-    postfix += `-${voiceId}`;
 
     const dialogPromptBuilderNode = new DialogPromptBuilderNode({
       id: `dialog-prompt-builder-node${postfix}`,
@@ -165,9 +165,14 @@ export class InworldGraphWrapper {
       reportToClient: true,
     });
 
+    const ttsRequestBuilderNode = new TTSRequestBuilderNode({
+      id: `tts-request-builder-node${postfix}`,
+      connections,
+    });
+
     const ttsNode = new RemoteTTSNode({
       id: `tts-node${postfix}`,
-      speakerId: voiceId,
+      speakerId: voiceId, // Default voice, overridden by TTSRequest
       modelId: ttsModelId,
       sampleRate: TTS_SAMPLE_RATE,
       temperature: 0.8,
@@ -187,12 +192,14 @@ export class InworldGraphWrapper {
       .addNode(llmNode)
       .addNode(textChunkingNode)
       .addNode(textAggregatorNode)
+      .addNode(ttsRequestBuilderNode)
       .addNode(ttsNode)
       .addNode(stateUpdateNode)
       .addEdge(textInputNode, dialogPromptBuilderNode)
       .addEdge(dialogPromptBuilderNode, llmNode)
       .addEdge(llmNode, textChunkingNode)
-      .addEdge(textChunkingNode, ttsNode)
+      .addEdge(textChunkingNode, ttsRequestBuilderNode)
+      .addEdge(ttsRequestBuilderNode, ttsNode)
       .addEdge(llmNode, textAggregatorNode)
       .addEdge(textAggregatorNode, stateUpdateNode);
 

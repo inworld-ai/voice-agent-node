@@ -22,9 +22,9 @@ export class InworldApp {
 
   vadClient: any;
 
-  // Cached graphs by voiceId (created lazily on first use)
-  private textGraphs: Map<string, InworldGraphWrapper> = new Map();
-  private audioGraphs: Map<string, InworldGraphWrapper> = new Map();
+  // Shared graphs for all sessions (voice selected dynamically via TTSRequestBuilderNode)
+  graphWithTextInput: InworldGraphWrapper;
+  private graphWithAudioInputAssemblyAI?: InworldGraphWrapper;
 
   // Environment configuration for lazy graph creation
   private env: ReturnType<typeof parseEnvironmentVariables>;
@@ -52,55 +52,49 @@ export class InworldApp {
       modelPath: this.vadModelPath,
     });
 
+    // Create shared text-only graph
+    // Voice is selected dynamically per session via TTSRequestBuilderNode
+    this.graphWithTextInput = await InworldGraphWrapper.create({
+      apiKey: this.apiKey,
+      llmModelName: this.llmModelName,
+      llmProvider: this.llmProvider,
+      voiceId: this.voiceId, // Default voice (overridden by TTSRequestBuilderNode)
+      connections: this.connections,
+      graphVisualizationEnabled: this.graphVisualizationEnabled,
+      disableAutoInterruption: this.disableAutoInterruption,
+      ttsModelId: this.ttsModelId,
+      vadClient: this.vadClient,
+    });
+
+    console.log('\n✓ Text input graph initialized');
     console.log(
-      '\n✓ Graphs will be created lazily per voice on first use\n',
+      '✓ Audio input graph will be created lazily when first requested\n',
     );
 
     console.log('✓ STT service: Assembly.AI\n');
   }
 
   /**
-   * Get the text graph for a specific voice.
-   * Graph is created lazily on first request for this voice.
+   * Get the Assembly.AI audio graph.
+   * Graph is created lazily on first request.
+   * Voice is selected dynamically per session via TTSRequestBuilderNode.
    */
-  async getTextGraph(voiceId: string): Promise<InworldGraphWrapper> {
-    if (!this.textGraphs.has(voiceId)) {
-      console.log(`  → Creating text graph for voice: ${voiceId}...`);
-      const graph = await InworldGraphWrapper.create({
-        apiKey: this.apiKey,
-        llmModelName: this.llmModelName,
-        llmProvider: this.llmProvider,
-        voiceId: voiceId,
-        connections: this.connections,
-        graphVisualizationEnabled: this.graphVisualizationEnabled,
-        disableAutoInterruption: this.disableAutoInterruption,
-        ttsModelId: this.ttsModelId,
-        vadClient: this.vadClient,
-      });
-      this.textGraphs.set(voiceId, graph);
-      console.log(`  ✓ Text graph created for voice: ${voiceId}`);
-    }
-    return this.textGraphs.get(voiceId)!;
-  }
-
-  /**
-   * Get the audio graph for a specific voice.
-   * Graph is created lazily on first request for this voice.
-   */
-  async getAudioGraph(voiceId: string): Promise<InworldGraphWrapper> {
+  async getGraphForSTTService(
+    _sttService?: string,
+  ): Promise<InworldGraphWrapper> {
     if (!this.env.assemblyAIApiKey) {
       throw new Error(
         `Assembly.AI STT requested but ASSEMBLY_AI_API_KEY is not configured. This should have been caught during session load.`,
       );
     }
 
-    if (!this.audioGraphs.has(voiceId)) {
-      console.log(`  → Creating audio graph for voice: ${voiceId}...`);
-      const graph = await InworldGraphWrapper.create({
+    if (!this.graphWithAudioInputAssemblyAI) {
+      console.log('  → Creating Assembly.AI STT graph (first use)...');
+      this.graphWithAudioInputAssemblyAI = await InworldGraphWrapper.create({
         apiKey: this.apiKey,
         llmModelName: this.llmModelName,
         llmProvider: this.llmProvider,
-        voiceId: voiceId,
+        voiceId: this.voiceId, // Default voice (overridden by TTSRequestBuilderNode)
         connections: this.connections,
         withAudioInput: true,
         graphVisualizationEnabled: this.graphVisualizationEnabled,
@@ -110,10 +104,11 @@ export class InworldApp {
         useAssemblyAI: true,
         assemblyAIApiKey: this.env.assemblyAIApiKey,
       });
-      this.audioGraphs.set(voiceId, graph);
-      console.log(`  ✓ Audio graph created for voice: ${voiceId}`);
+      console.log('  ✓ Assembly.AI STT graph created');
+    } else {
+      console.log(`  → Using Assembly.AI STT graph`);
     }
-    return this.audioGraphs.get(voiceId)!;
+    return this.graphWithAudioInputAssemblyAI;
   }
 
   async load(req: any, res: any) {
@@ -153,6 +148,7 @@ export class InworldApp {
 
     // Get voice from client request (set by template selection)
     // Falls back to DEFAULT_VOICE_ID if client doesn't send one
+    // Store voice in session state for TTSRequestBuilderNode to use
     const sessionVoiceId = req.body.voiceId || this.voiceId;
 
     console.log(
@@ -171,7 +167,7 @@ export class InworldApp {
         ],
         agent,
         userName: req.body.userName,
-        voiceId: sessionVoiceId, // Use request voiceId or default
+        voiceId: sessionVoiceId, // TTSRequestBuilderNode reads this for dynamic voice selection
       },
       ws: null,
       sttService, // Store STT service choice for this session
@@ -207,20 +203,12 @@ export class InworldApp {
     res.end(JSON.stringify({ message: 'Session unloaded' }));
   }
 
-  async shutdown() {
+  shutdown() {
     this.connections = {};
+    this.graphWithTextInput.destroy();
 
-    // Destroy all text graphs
-    for (const graph of this.textGraphs.values()) {
-      await graph.destroy();
-    }
-    this.textGraphs.clear();
-
-    // Destroy all audio graphs
-    for (const graph of this.audioGraphs.values()) {
-      await graph.destroy();
-    }
-    this.audioGraphs.clear();
+    // Destroy audio graph if it was created
+    this.graphWithAudioInputAssemblyAI?.destroy();
 
     stopInworldRuntime();
   }
