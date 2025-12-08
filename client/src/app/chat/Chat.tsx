@@ -157,10 +157,15 @@ export function Chat(props: ChatProps) {
   const handleTextKeyPress = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter') {
-        handleSend();
+        // On first message, always submit on Enter (don't add new line)
+        // On subsequent messages, allow Shift+Enter for new line, Enter to submit
+        if (chatHistory.length === 0 || !e.shiftKey) {
+          e.preventDefault();
+          handleSend();
+        }
       }
     },
-    [handleSend],
+    [handleSend, chatHistory.length],
   );
 
   const handleSpeakClick = useCallback(async () => {
@@ -434,8 +439,6 @@ export function Chat(props: ChatProps) {
                 >
                   <TextField
                     fullWidth
-                    multiline
-                    maxRows={3}
                     value={text}
                     onChange={handleTextChange}
                     onKeyPress={handleTextKeyPress}
