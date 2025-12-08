@@ -1,6 +1,6 @@
 import { CustomNode, GraphTypes, ProcessContext } from '@inworld/runtime/graph';
 
-import { State } from '../../types';
+import { State } from '../../../types';
 
 /**
  * TextInputSafetyMergerNode merges State with SafetyResult.

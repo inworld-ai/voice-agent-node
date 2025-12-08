@@ -7,6 +7,7 @@ import {
   RandomCannedTextNode,
   RemoteEmbedderComponent,
   RemoteLLMChatNode,
+  RemoteLLMComponent,
   RemoteTTSNode,
   SubgraphBuilder,
   SubgraphNode,
@@ -23,23 +24,31 @@ import {
   INPUT_SAMPLE_RATE,
   TEXT_CONFIG,
   TTS_SAMPLE_RATE,
-} from '../../constants';
-import { CreateGraphPropsInterface, TextInput } from '../types';
-import { AssemblyAISTTWebSocketNode } from './nodes/assembly_ai_stt_ws_node';
-import { DialogPromptBuilderNode } from './nodes/dialog_prompt_builder_node';
-import { InteractionQueueNode } from './nodes/interaction_queue_node';
-import { SpeechCompleteNotifierNode } from './nodes/speech_complete_notifier_node';
-import { SafetyAggregatorCustomNode } from './nodes/safety_aggregator_node';
-import { SafetyTextExtractorNode } from './nodes/safety_text_extractor_node';
-import { StateUpdateNode } from './nodes/state_update_node';
-import { TextInputNode } from './nodes/text_input_node';
-import { TextInputSafetyExtractorNode } from './nodes/text_input_safety_extractor_node';
-import { TextInputSafetyMergerNode } from './nodes/text_input_safety_merger_node';
-import { TextInputStateUpdaterNode } from './nodes/text_input_state_updater_node';
-import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
+} from '../../../constants';
+import { CreateGraphPropsInterface, TextInput } from '../../types';
+import { AssemblyAISTTWebSocketNode } from '../nodes/stt/assembly_ai_stt_ws_node';
+import { DialogPromptBuilderNode } from '../nodes/dialog_prompt_builder_node';
+import { MemoryUpdateNode } from '../nodes/memory/memory_update_node';
+import { InteractionQueueNode } from '../nodes/interaction_queue_node';
+import { MemoryRetrievalNode } from '../nodes/memory/memory_retrieval_node';
+import { SpeechCompleteNotifierNode } from '../nodes/stt/speech_complete_notifier_node';
+import { SafetyAggregatorCustomNode } from '../nodes/safety/safety_aggregator_node';
+import { SafetyTextExtractorNode } from '../nodes/safety/safety_text_extractor_node';
+import { StateUpdateNode } from '../nodes/state_update_node';
+import { SaveMemoryNode } from '../nodes/memory/save_memory_node';
+import { TextInputNode } from '../nodes/text_input_node';
+import { TextInputTextExtractorNode } from '../nodes/text_input_text_extractor_node';
+import { TextInputSafetyMergerNode } from '../nodes/safety/text_input_safety_merger_node';
+import { TextInputStateUpdaterNode } from '../nodes/text_input_state_updater_node';
+import { TranscriptExtractorNode } from '../nodes/stt/transcript_extractor_node';
+import { createFlashSubgraph } from './flash_subgraph';
+import { createLongTermSubgraph } from './long_term_subgraph';
+import { ResultMergeNode } from '../nodes/memory/result_merge_node';
+import { getDefaultMemoryStore } from '../memory_store';
+import { MemorySnapshot } from '../nodes/memory/memory_types';
 
 //
-// A complete audio-to-speech pipeline with stream slicer, LLM, and safety checks:
+// A complete audio-to-speech pipeline with stream slicer, LLM, safety checks, and memory:
 //
 // clang-format off
 //
@@ -71,41 +80,45 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //
 //  textInputNode
 //      │
-//      ├──> textInputSafetyExtractorNode
+//      ├──> textInputTextExtractorNode
 //      │       │
-//      │       └──> inputSafetySubgraph.subgraphNode
+//      │       ├──> inputSafetySubgraph.subgraphNode
+//      │       │       │
+//      │       │       └──> textInputSafetyMergerNode
+//      │       │
+//      │       ├──> memoryRetrievalNode
+//      │       │       │
+//      │       │       └──> dialogPromptBuilderNode
+//      │       │
+//      │       └──> knowledgeNode (if knowledge enabled)
 //      │               │
-//      │               ├──> textInputSafetyMergerNode
-//      │               │
-//      │               └──> [isSafe === true] inputSafetyTextExtractorNode (if knowledge enabled)
-//      │                       │
-//      │                       └──> knowledgeNode
-//      │                               │
-//      │                               └──> dialogPromptBuilderNode
+//      │               └──> dialogPromptBuilderNode
 //      │
-//      └──> textInputStateUpdaterNode
+//      ├──> textInputStateUpdaterNode
+//      │       │
+//      │       └──> textInputSafetyMergerNode
+//      │               │
+//      │               ├──> [isSafe === true] dialogPromptBuilderNode
+//      │               │
+//      │               └──> [isSafe === false] inputSafetyFailureCannedResponseNode
+//      │                       │
+//      │                       └──> responseAggregatorProxyNode
+//
+//  dialogPromptBuilderNode
+//      │
+//      └──> llmNode
 //              │
-//              └──> textInputSafetyMergerNode
+//              └──> textAggregatorNode
 //                      │
-//                      ├──> [isSafe === true] dialogPromptBuilderNode
-//                      │       │
-//                      │       └──> llmNode
-//                      │               │
-//                      │               └──> textAggregatorNode
-//                      │                       │
-//                      │                       └──> outputSafetySubgraph.subgraphNode
-//                      │                               │
-//                      │                               ├──> [isSafe === true] safetyTextExtractorNode
-//                      │                               │       │
-//                      │                               │       └──> responseAggregatorProxyNode
-//                      │                               │
-//                      │                               └──> [isSafe === false] outputSafetyFailureCannedResponseNode
-//                      │                                       │
-//                      │                                       └──> responseAggregatorProxyNode
-//                      │
-//                      └──> [isSafe === false] inputSafetyFailureCannedResponseNode
+//                      └──> outputSafetySubgraph.subgraphNode
 //                              │
-//                              └──> responseAggregatorProxyNode
+//                              ├──> [isSafe === true] safetyTextExtractorNode
+//                              │       │
+//                              │       └──> responseAggregatorProxyNode
+//                              │
+//                              └──> [isSafe === false] outputSafetyFailureCannedResponseNode
+//                                      │
+//                                      └──> responseAggregatorProxyNode
 //
 //  ┌─────────────────────────────────────────────────────────────────────────────┐
 //  │                        COMMON OUTPUT PATH                                   │
@@ -119,9 +132,29 @@ import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 //      │
 //      └──> stateUpdateNode
 //              │
-//              └──<──┐ [loop, optional] (when withAudioInput=true)
-//                    │
-//                    └──> interactionQueueNode
+//              └──> memoryUpdateNode
+//                      │
+//                      ├──> flashSubgraphNode [runFlash === true] (every 2 turns, optional)
+//                      │       │
+//                      │       └──> resultMergeNode
+//                      │
+//                      ├──> longTermSubgraphNode [runLongTerm === true] (every 10 turns, optional)
+//                      │       │
+//                      │       └──> resultMergeNode
+//                      │
+//                      └──> resultMergeNode
+//                              │
+//                              └──> saveMemoryNode (optional)
+//
+//  ┌─────────────────────────────────────────────────────────────────────────────┐
+//  │                        AUDIO LOOP PATH (withAudioInput=true)                │
+//  └─────────────────────────────────────────────────────────────────────────────┘
+//
+//  stateUpdateNode
+//      │
+//      └──<──┐ [loop, optional]
+//            │
+//            └──> interactionQueueNode
 //
 //  Legend:
 //  ───> Required edge
@@ -151,7 +184,7 @@ function createSafetySubgraph(
   // Use __dirname to get path relative to this file location (more reliable than process.cwd())
   const DEFAULT_TEXT_CLASSIFIER_WEIGHTS_MODEL_PATH = path.resolve(
     __dirname,
-    '..',
+    '../..',
     'config',
     'safety_classifier_model_weights.json',
   );
@@ -163,7 +196,7 @@ function createSafetySubgraph(
   // Users can override via SAFETY_KEYWORDS_PATH environment variable
   const DEFAULT_KEYWORD_MATCHER_CONFIG_PATH = path.resolve(
     __dirname,
-    '..',
+    '../..',
     'config',
     'profanity.json',
   );
@@ -341,6 +374,127 @@ export class InworldGraphWrapper {
       postfix,
     );
 
+    // Initialize memory store
+    const memoryStore = getDefaultMemoryStore();
+
+    // Load memory templates
+    const FLASH_TEMPLATE_PATH = path.resolve(
+      __dirname,
+      '../../',
+      'templates',
+      'flash_memory_prompt.jinja',
+    );
+    const LONG_TERM_TEMPLATE_PATH = path.resolve(
+      __dirname,
+      '../../',
+      'templates',
+      'long_term_prompt.jinja',
+    );
+
+    const flashTemplate = fs.readFileSync(FLASH_TEMPLATE_PATH, 'utf-8');
+    const longTermTemplate = fs.readFileSync(LONG_TERM_TEMPLATE_PATH, 'utf-8');
+
+    // Memory configuration
+    const memoryEmbedderComponentId = `memory_embedder_component${postfix}`;
+    const memoryLLMComponentId = `memory_llm_component${postfix}`;
+    const memoryLLMProvider =
+      process.env.MEMORY_LLM_PROVIDER || llmProvider;
+    const memoryLLMModel =
+      process.env.MEMORY_LLM_MODEL || llmModelName;
+
+    // Create memory embedder component
+    const memoryEmbedderComponent = new RemoteEmbedderComponent({
+      id: memoryEmbedderComponentId,
+      provider: 'inworld',
+      modelName: 'BAAI/bge-large-en-v1.5',
+    });
+
+    // Create memory LLM component
+    const memoryLLMComponent = new RemoteLLMComponent({
+      id: memoryLLMComponentId,
+      provider: memoryLLMProvider,
+      modelName: memoryLLMModel,
+      defaultConfig: { maxNewTokens: 800, temperature: 0.7 },
+    });
+
+    // Create memory subgraphs
+    const flashSubgraph = createFlashSubgraph(
+      `flash_memory_subgraph${postfix}`,
+      {
+        promptTemplate: flashTemplate,
+        maxHistoryToProcess:
+          parseInt(process.env.FLASH_MEMORY_INTERVAL || '2', 10),
+        embedderComponentId: memoryEmbedderComponentId,
+        llmProvider: memoryLLMProvider,
+        llmModelName: memoryLLMModel,
+      },
+    );
+
+    const longTermSubgraph = createLongTermSubgraph(
+      `long_term_memory_subgraph${postfix}`,
+      {
+        promptTemplate: longTermTemplate,
+        maxHistoryToProcess:
+          parseInt(process.env.LONG_TERM_MEMORY_INTERVAL || '10', 10),
+        embedderComponentId: memoryEmbedderComponentId,
+        llmComponentId: memoryLLMComponentId,
+        llmProvider: memoryLLMProvider,
+        llmModelName: memoryLLMModel,
+      },
+    );
+
+    const flashSubgraphNode = new SubgraphNode({
+      subgraphId: `flash_memory_subgraph${postfix}`,
+    });
+
+    const longTermSubgraphNode = new SubgraphNode({
+      subgraphId: `long_term_memory_subgraph${postfix}`,
+    });
+
+    // Create memory retrieval node
+    const memoryRetrievalNode = new MemoryRetrievalNode({
+      embedderComponentId: memoryEmbedderComponentId,
+      similarityThreshold: parseFloat(
+        process.env.MEMORY_SIMILARITY_THRESHOLD || '0.3',
+      ),
+      maxContextItems: parseInt(
+        process.env.MAX_RETURNED_MEMORIES || '3',
+        10,
+      ),
+      connections,
+    });
+
+    // Create memory update node
+    const memoryUpdateNode = new MemoryUpdateNode({
+      flashInterval: parseInt(process.env.FLASH_MEMORY_INTERVAL || '2', 10),
+      longTermInterval: parseInt(
+        process.env.LONG_TERM_MEMORY_INTERVAL || '10',
+        10,
+      ),
+      connections,
+    });
+
+    // Create result merge node
+    const resultMergeNode = new ResultMergeNode({
+      similarityThreshold: parseFloat(
+        process.env.RESULT_MERGE_SIMILARITY_THRESHOLD || '0.9',
+      ),
+      maxFlashMemories: parseInt(
+        process.env.RESULT_MERGE_MAX_FLASH_MEMORIES || '200',
+        10,
+      ),
+      maxLongTermMemories: parseInt(
+        process.env.RESULT_MERGE_MAX_LONG_TERM_MEMORIES || '200',
+        10,
+      ),
+    });
+
+    // Create save memory node (separate from stateUpdateNode to break the cycle)
+    const saveMemoryNode = new SaveMemoryNode({
+      id: `save-memory-node${postfix}`,
+      connections,
+    });
+
     const graphName = `voice-agent${postfix}`;
     const graphBuilder = new GraphBuilder({
       id: graphName,
@@ -351,15 +505,19 @@ export class InworldGraphWrapper {
     graphBuilder
       .addComponent(inputSafetySubgraph.textEmbedderComponent)
       .addComponent(outputSafetySubgraph.textEmbedderComponent)
+      .addComponent(memoryEmbedderComponent)
+      .addComponent(memoryLLMComponent)
       .addSubgraph(inputSafetySubgraph.subgraph)
-      .addSubgraph(outputSafetySubgraph.subgraph);
+      .addSubgraph(outputSafetySubgraph.subgraph)
+      .addSubgraph(flashSubgraph)
+      .addSubgraph(longTermSubgraph);
 
     const textInputNode = new TextInputNode({
       id: `text-input-node${postfix}`,
     });
 
-    const textInputSafetyExtractorNode = new TextInputSafetyExtractorNode({
-      id: `text-input-safety-extractor-node${postfix}`,
+    const textInputTextExtractorNode = new TextInputTextExtractorNode({
+      id: `text-input-text-extractor-node${postfix}`,
     });
 
     const textInputStateUpdaterNode = new TextInputStateUpdaterNode({
@@ -376,7 +534,7 @@ export class InworldGraphWrapper {
     // Use __dirname to get path relative to this file location (more reliable than process.cwd())
     const DEFAULT_KNOWLEDGE_PATH = path.resolve(
       __dirname,
-      '..',
+      '../..',
       'config',
       'knowledge.json',
     );
@@ -413,10 +571,6 @@ export class InworldGraphWrapper {
       },
     });
 
-    // Create input safety text extractor for knowledge retrieval
-    const inputSafetyTextExtractorNode = new SafetyTextExtractorNode({
-      id: `input-safety-text-extractor-node${postfix}`,
-    });
 
     const inputSafetyFailureCannedResponseNode = new RandomCannedTextNode({
       id: `input-safety-failure-canned-response-node${postfix}`,
@@ -433,11 +587,12 @@ export class InworldGraphWrapper {
 
     graphBuilder
       .addNode(textInputNode)
-      .addNode(textInputSafetyExtractorNode)
+      .addNode(textInputTextExtractorNode)
       .addNode(textInputStateUpdaterNode)
       .addNode(textInputSafetyMergerNode)
       .addNode(inputSafetySubgraph.subgraphNode)
       .addNode(inputSafetyFailureCannedResponseNode)
+      .addNode(memoryRetrievalNode)
       .addNode(dialogPromptBuilderNode)
       .addNode(llmNode)
       .addNode(outputSafetySubgraph.subgraphNode)
@@ -446,45 +601,51 @@ export class InworldGraphWrapper {
       .addNode(responseAggregatorProxyNode)
       .addNode(textChunkingNode)
       .addNode(textAggregatorNode)
+      .addNode(memoryUpdateNode)
+      .addNode(flashSubgraphNode)
+      .addNode(longTermSubgraphNode)
+      .addNode(resultMergeNode)
+      .addNode(saveMemoryNode)
       .addNode(ttsNode)
       .addNode(stateUpdateNode);
 
-    // Add knowledge nodes only if knowledge records are available
+    // Add knowledge node only if knowledge records are available
     if (knowledgeRecords.length > 0) {
-      graphBuilder
-        .addNode(inputSafetyTextExtractorNode)
-        .addNode(knowledgeNode);
+      graphBuilder.addNode(knowledgeNode);
     }
 
     graphBuilder
-      .addEdge(textInputNode, textInputSafetyExtractorNode)
-      .addEdge(textInputSafetyExtractorNode, inputSafetySubgraph.subgraphNode)
+      .addEdge(textInputNode, textInputTextExtractorNode)
+      .addEdge(textInputTextExtractorNode, inputSafetySubgraph.subgraphNode)
       .addEdge(textInputNode, textInputStateUpdaterNode)
       .addEdge(textInputStateUpdaterNode, textInputSafetyMergerNode)
-      .addEdge(inputSafetySubgraph.subgraphNode, textInputSafetyMergerNode);
+      .addEdge(inputSafetySubgraph.subgraphNode, textInputSafetyMergerNode)
+      // Memory: Retrieve relevant memories from extracted text
+      .addEdge(textInputTextExtractorNode, memoryRetrievalNode);
 
     // Add knowledge edges only if knowledge records are available
     if (knowledgeRecords.length > 0) {
       graphBuilder
-        .addEdge(inputSafetySubgraph.subgraphNode, inputSafetyTextExtractorNode, {
-          condition: async (input: any) => {
-            return input?.isSafe === true;
-          },
-        })
-        .addEdge(inputSafetyTextExtractorNode, knowledgeNode)
+        // Knowledge: Connect knowledge retrieval to extracted text
+        .addEdge(textInputTextExtractorNode, knowledgeNode)
         .addEdge(textInputSafetyMergerNode, dialogPromptBuilderNode, {
           condition: async (input: any) => {
             return input?.isSafe === true;
           },
         })
-        .addEdge(knowledgeNode, dialogPromptBuilderNode);
+        .addEdge(knowledgeNode, dialogPromptBuilderNode)
+        // Memory: Connect memory retrieval to dialog prompt builder (alongside knowledge)
+        .addEdge(memoryRetrievalNode, dialogPromptBuilderNode);
     } else {
       // If no knowledge, connect safety merger directly to dialog prompt builder
-      graphBuilder.addEdge(textInputSafetyMergerNode, dialogPromptBuilderNode, {
-        condition: async (input: any) => {
-          return input?.isSafe === true;
-        },
-      });
+      graphBuilder
+        .addEdge(textInputSafetyMergerNode, dialogPromptBuilderNode, {
+          condition: async (input: any) => {
+            return input?.isSafe === true;
+          },
+        })
+        // Memory: Connect memory retrieval to dialog prompt builder
+        .addEdge(memoryRetrievalNode, dialogPromptBuilderNode);
     }
 
     graphBuilder
@@ -525,6 +686,28 @@ export class InworldGraphWrapper {
       })
       .addEdge(responseAggregatorProxyNode, textChunkingNode)
       .addEdge(responseAggregatorProxyNode, stateUpdateNode)
+      // Memory: Connect stateUpdateNode to memoryUpdateNode (state now has assistant message)
+      .addEdge(stateUpdateNode, memoryUpdateNode)
+      // Memory: Connect memory update to memory subgraphs
+      .addEdge(memoryUpdateNode, flashSubgraphNode, {
+        condition: async (input: any) => {
+          const val = input?.value || input;
+          return val?.runFlash === true;
+        },
+        optional: true,
+      })
+      .addEdge(memoryUpdateNode, longTermSubgraphNode, {
+        condition: async (input: any) => {
+          return input?.runLongTerm === true;
+        },
+        optional: true,
+      })
+      // Memory: Merge memory results
+      .addEdge(memoryUpdateNode, resultMergeNode)
+      .addEdge(flashSubgraphNode, resultMergeNode, { optional: true })
+      .addEdge(longTermSubgraphNode, resultMergeNode, { optional: true })
+      // Memory: Save snapshot in saveMemoryNode (separate node to break cycle)
+      .addEdge(resultMergeNode, saveMemoryNode, { optional: true })
       .addEdge(textChunkingNode, ttsNode);
 
     if (withAudioInput) {

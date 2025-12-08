@@ -1,7 +1,7 @@
 import { DataStreamWithMetadata } from '@inworld/runtime';
 import { CustomNode, ProcessContext } from '@inworld/runtime/graph';
 
-import { InteractionInfo } from '../../types';
+import { InteractionInfo } from '../../../types';
 
 /**
  * TranscriptExtractorNode extracts transcript information from

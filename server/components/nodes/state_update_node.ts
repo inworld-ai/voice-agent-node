@@ -26,46 +26,55 @@ export class StateUpdateNode extends CustomNode {
     this.connections = props.connections;
   }
 
-  process(context: ProcessContext, llmOutput: string): State {
-    console.log('StateUpdateNode', { llmOutput });
+  process(context: ProcessContext, ...inputs: any[]): State {
+    // Input: LLM output text (string)
 
-    // TODO: Use this when DataStore will allow to modify state
-    // const state = context.getDatastore().get('state') as State;
-    // if (!state) {
-    //   throw Error(`Failed to read state from dataStore`);
-    // }
-    // state.messages.push({
-    //   role: 'assistant',
-    //   content: llmOutput,
-    //   id: state.messages.at(-1).id,
-    // });
-    // return state;
+    let llmOutput: string | undefined;
 
-    // Get sessionId from dataStore (constant for graph execution)
+    for (const input of inputs) {
+      const val = input?.value || input;
+      if (!val) continue;
+
+      // Check for string (LLM output)
+      if (typeof val === 'string') {
+        llmOutput = val;
+        break; // Use the first string we find
+      }
+    }
+
+    // Get sessionId from datastore
     const sessionId = context.getDatastore().get('sessionId') as string;
+    if (!sessionId) {
+      throw Error(`Failed to get sessionId`);
+    }
 
     const connection = this.connections[sessionId];
-    if (connection?.unloaded) {
-      throw Error(`Session unloaded for sessionId:${sessionId}`);
-    }
     if (!connection) {
-      throw Error(`Failed to read connection for sessionId:${sessionId}`);
+      throw Error(`Failed to get connection for sessionId:${sessionId}`);
+    }
+
+    // Read state from connection (persistent across executions)
+    const state = connection.state;
+    if (!state) {
+      throw Error(`Failed to read state from connection`);
+    }
+
+    if (!llmOutput) {
+      // Return current state if no LLM output
+      return state;
     }
 
     // Add assistant message with the same interactionId (already set by TextInputNode)
-    connection.state.messages.push({
+    state.messages.push({
       role: 'assistant',
       content: llmOutput,
-      id: connection.state.interactionId,
+      id: state.interactionId,
     });
 
+    // Mark interaction as completed in datastore (only used within this execution for interaction queue)
     const dataStore = context.getDatastore();
-    dataStore.add('c' + connection.state.interactionId, '');
-    console.log(
-      'StateUpdateNode: Marking interaction as completed',
-      connection.state.interactionId,
-    );
+    dataStore.add('c' + state.interactionId, '');
 
-    return connection.state;
+    return state;
   }
 }

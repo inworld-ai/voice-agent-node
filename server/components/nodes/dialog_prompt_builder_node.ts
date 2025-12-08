@@ -8,8 +8,10 @@ import { State } from '../../types';
  * This node:
  * - Receives the current conversation state (may include isSafe property from safety checks)
  * - Optionally receives KnowledgeRecords as a second input
+ * - Optionally receives relevantMemories from RAG node
  * - Converts state messages to LLM message format
  * - Adds knowledge records as a system message if they exist
+ * - Adds memory context as a system message if memories exist
  * - Returns a formatted LLMChatRequest for the LLM node
  */
 export class DialogPromptBuilderNode extends CustomNode {
@@ -17,6 +19,7 @@ export class DialogPromptBuilderNode extends CustomNode {
     _context: ProcessContext,
     state: State | (State & { isSafe?: boolean }),
     knowledgeRecords?: GraphTypes.KnowledgeRecords,
+    memoryContext?: { relevantMemories: string[] },
   ): GraphTypes.LLMChatRequest {
     // Convert state messages to LLMMessageInterface format
     // Note: isSafe property is ignored, only messages are used
@@ -25,7 +28,7 @@ export class DialogPromptBuilderNode extends CustomNode {
       content: msg.content,
     }));
 
-    // Add knowledge records as a system message if they exist
+    // Add knowledge records and memory context as system messages if they exist
     const messages: Array<{ role: string; content: string }> = [];
     
     if (knowledgeRecords && knowledgeRecords.records && knowledgeRecords.records.length > 0) {
@@ -40,6 +43,16 @@ export class DialogPromptBuilderNode extends CustomNode {
       });
     } else {
       console.log('DialogPromptBuilderNode: No knowledge records fetched');
+    }
+
+    // Add memory context if available
+    if (memoryContext && memoryContext.relevantMemories && memoryContext.relevantMemories.length > 0) {
+      console.log(`DialogPromptBuilderNode: Using ${memoryContext.relevantMemories.length} relevant memory(ies)`);
+      const memoryContextText = `Here is what you remember about the user based on the current conversation topic:\n\n${memoryContext.relevantMemories.map((m, index) => `${index + 1}. ${m}`).join('\n')}\n\nUse this context naturally in your responses. Do not explicitly mention "your memories" or "records" - just use the information as if you recall it.`;
+      messages.push({
+        role: 'system',
+        content: memoryContextText,
+      });
     }
 
     // Add conversation messages

@@ -1,0 +1,12 @@
+Summarize the last 10 turns of this conversation into one long term memory of 1-3 sentences. This memory may be retrieved in the future to help this AI agent with long term persistence in their relationship with the user. New memories shouldn't overlap with previous memories, but should instead cover new, unique information.
+
+{{ dialogueLines }}
+
+{% if previousLongTerm %}
+These are the previous long term memories for this user:
+
+{{ previousLongTerm }}
+{% endif %}
+
+Now generate one new long term memory of 1-3 sentences.
+

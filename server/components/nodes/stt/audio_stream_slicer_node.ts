@@ -2,7 +2,7 @@ import { DataStreamWithMetadata } from '@inworld/runtime';
 import { CustomNode, GraphTypes, ProcessContext } from '@inworld/runtime/graph';
 import { VAD } from '@inworld/runtime/primitives/vad';
 
-import { Connection } from '../../types';
+import { Connection } from '../../../types';
 
 /**
  * Configuration interface for AudioStreamSlicerNode

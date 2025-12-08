@@ -31,13 +31,13 @@ export class TextInputStateUpdaterNode extends CustomNode {
   ): State {
     const { text, interactionId, sessionId } = textInput;
 
+    // Get connection - this is the persistent source of truth
     const connection = this.connections[sessionId];
-    if (connection?.unloaded) {
-      throw Error(`Session unloaded for sessionId:${sessionId}`);
-    }
     if (!connection) {
-      throw Error(`Failed to read connection for sessionId:${sessionId}`);
+      throw Error(`Failed to get connection for sessionId:${sessionId}`);
     }
+
+    // Read state from connection (persistent across executions)
     const state = connection.state;
     if (!state) {
       throw Error(
@@ -46,15 +46,15 @@ export class TextInputStateUpdaterNode extends CustomNode {
     }
 
     // Update interactionId and add user message
-    connection.state.interactionId = interactionId;
-    connection.state.messages.push({
+    state.interactionId = interactionId;
+    state.messages.push({
       role: 'user',
       content: text,
       id: interactionId,
     });
 
     // Return state (will be reported to client)
-    return connection.state;
+    return state;
   }
 }
 

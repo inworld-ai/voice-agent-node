@@ -6,9 +6,9 @@ import { INPUT_SAMPLE_RATE } from '../../constants';
 import { AudioInput, AudioStreamInput, EVENT_TYPE, TextInput } from '../types';
 import { Connection } from '../types';
 import { InworldApp } from './app';
-import { AudioStreamManager } from './audio_stream_manager';
+import { AudioStreamManager } from './audio/audio_stream_manager';
 import { EventFactory } from './event_factory';
-import { InworldGraphWrapper } from './graph';
+import { InworldGraphWrapper } from './graphs/graph';
 
 const WavEncoder = require('wav-encoder');
 

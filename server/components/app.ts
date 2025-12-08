@@ -5,7 +5,7 @@ const { validationResult } = require('express-validator');
 
 import { parseEnvironmentVariables } from '../helpers';
 import { Connection } from '../types';
-import { InworldGraphWrapper } from './graph';
+import { InworldGraphWrapper } from './graphs/graph';
 
 export class InworldApp {
   apiKey: string;

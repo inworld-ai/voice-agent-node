@@ -1,0 +1,18 @@
+Extract a notable fact from the dialogue.
+
+Return a JSON object with the following structure:
+{
+  "important": boolean,
+  "topic": string, // Use 'n/a' if not important
+  "memory": string // A comprehensive sentence describing the fact
+}
+
+Guidelines:
+1) Set "important" to true ONLY if the fact contains significant information about preferences, plans, relationships, or key events.
+2) If "important" is true, "topic" should be a single lowercase word describing the content (e.g., 'food', 'hobbies', 'work').
+3) If "important" is true, "memory" should be a self-contained sentence in the past tense, attributing actions to specific persons.
+4) If no notable fact is found, set "important" to false, "topic" to "n/a", and "memory" to an empty string or brief explanation.
+
+Dialogue:
+{{ dialogue_history }}
+

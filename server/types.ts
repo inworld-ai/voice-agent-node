@@ -1,6 +1,6 @@
 import { AudioChunkInterface } from '@inworld/runtime/common';
 
-import { AudioStreamManager } from './components/audio_stream_manager';
+import { AudioStreamManager } from './components/audio/audio_stream_manager';
 
 export enum EVENT_TYPE {
   TEXT = 'TEXT',
@@ -64,6 +64,7 @@ export interface Connection {
   audioStreamManager?: AudioStreamManager;
   currentAudioGraphExecution?: Promise<void>;
   sttService?: string; // STT service selection for this session
+  memorySnapshot?: import('./components/nodes/memory/memory_types').MemorySnapshot; // Memory snapshot for this session
 }
 
 export type ConnectionsMap = {

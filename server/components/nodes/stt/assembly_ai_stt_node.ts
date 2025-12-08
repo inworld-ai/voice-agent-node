@@ -1,16 +1,16 @@
 import { DataStreamWithMetadata } from '@inworld/runtime';
 import { CustomNode, GraphTypes, ProcessContext } from '@inworld/runtime/graph';
 import { VAD } from '@inworld/runtime/primitives/vad';
+import { AssemblyAI } from 'assemblyai';
 import { v4 } from 'uuid';
-import WebSocket from 'ws';
 
-import { Connection } from '../../types';
-import { EventFactory } from '../event_factory';
+import { Connection } from '../../../types';
+import { EventFactory } from '../../event_factory';
 
 /**
- * Configuration interface for AssemblyAISTTWebSocketNode
+ * Configuration interface for AssemblyAISTTNode
  */
-export interface AssemblyAISTTWebSocketNodeConfig {
+export interface AssemblyAISTTNodeConfig {
   /** Assembly.AI API key */
   apiKey: string;
   /** Connections map to access session state */
@@ -36,18 +36,17 @@ export interface AssemblyAISTTWebSocketNodeConfig {
 }
 
 /**
- * AssemblyAISTTWebSocketNode processes continuous audio streams using Assembly.AI's
- * streaming Speech-to-Text service via direct WebSocket connection.
+ * AssemblyAISTTNode processes continuous audio streams using Assembly.AI's
+ * streaming Speech-to-Text service.
  *
  * This node:
- * - Connects directly to Assembly.AI WebSocket endpoint
  * - Feeds audio chunks to Assembly.AI streaming transcriber
  * - Detects turn endings automatically using Assembly.AI's turn detection
  * - Uses VAD to track silence duration throughout the audio stream
  * - Returns InteractionInfo with transcribed text and silence metrics when a turn completes
  */
-export class AssemblyAISTTWebSocketNode extends CustomNode {
-  private apiKey: string;
+export class AssemblyAISTTNode extends CustomNode {
+  private client: AssemblyAI;
   private connections: { [sessionId: string]: Connection };
   private vad: VAD;
   private speechThreshold: number;
@@ -58,48 +57,41 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
   private maxTurnSilence: number;
   private language: string;
   private keytermsPrompt: string[];
-  private wsEndpointBaseUrl: string = 'wss://streaming.assemblyai.com/v3/ws';
 
-  // Per-session WebSocket connections
+  // Per-session transcriber connections
   private readonly INACTIVITY_TIMEOUT_MS = 60000; // 60 seconds
   private sessions: Map<
     string,
     {
-      ws: WebSocket | null;
-      wsReady: boolean;
-      wsConnectionPromise: Promise<void> | null;
+      transcriber: any;
+      transcriberReady: boolean;
+      transcriberConnectionPromise: Promise<void> | null;
       assemblySessionId: string;
       sessionExpiresAt: number;
       inactivityTimeout: NodeJS.Timeout | null;
       lastActivityTime: number;
-      shouldStopProcessing: boolean;
     }
   > = new Map();
 
-  constructor(props: {
-    id?: string;
-    config: AssemblyAISTTWebSocketNodeConfig;
-  }) {
+  constructor(props: { id?: string; config: AssemblyAISTTNodeConfig }) {
     const { config, ...nodeProps } = props;
 
     if (!config.apiKey) {
-      throw new Error('AssemblyAISTTWebSocketNode requires an API key.');
+      throw new Error('AssemblyAISTTNode requires an API key.');
     }
 
     if (!config.connections) {
-      throw new Error(
-        'AssemblyAISTTWebSocketNode requires a connections object.',
-      );
+      throw new Error('AssemblyAISTTNode requires a connections object.');
     }
 
     if (!config.vadClient) {
       throw new Error(
-        'AssemblyAISTTWebSocketNode requires a VAD client. Pass the shared VAD instance from InworldApp.',
+        'AssemblyAISTTNode requires a VAD client. Pass the shared VAD instance from InworldApp.',
       );
     }
 
     super({
-      id: nodeProps.id || 'assembly-ai-stt-ws-node',
+      id: nodeProps.id || 'assembly-ai-stt-node',
       executionConfig: {
         sampleRate: config.sampleRate || 16000,
         formatTurns: config.formatTurns !== false,
@@ -113,7 +105,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       },
     });
 
-    this.apiKey = config.apiKey;
+    this.client = new AssemblyAI({ apiKey: config.apiKey });
     this.connections = config.connections;
     this.vad = config.vadClient;
     this.speechThreshold = config.speechThreshold || 0.5;
@@ -129,105 +121,87 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
   }
 
   /**
-   * Build WebSocket URL with query parameters
+   * Initialize persistent transcriber connection for a session
    */
-  private buildWebSocketUrl(): string {
-    const params = new URLSearchParams({
-      sample_rate: this.sampleRate.toString(),
-      format_turns: this.formatTurns.toString(),
-      end_of_turn_confidence_threshold:
-        this.endOfTurnConfidenceThreshold.toString(),
-      min_end_of_turn_silence_when_confident:
-        this.minEndOfTurnSilenceWhenConfident.toString(),
-      max_turn_silence: this.maxTurnSilence.toString(),
-      language: this.language,
-    });
-
-    // Add keyterms if provided
-    if (this.keytermsPrompt.length > 0) {
-      this.keytermsPrompt.forEach((term) => {
-        params.append('keyterms_prompt', term);
-      });
-    }
-
-    return `${this.wsEndpointBaseUrl}?${params.toString()}`;
-  }
-
-  /**
-   * Initialize persistent WebSocket connection for a session
-   */
-  private initializeWebSocket(sessionId: string): void {
+  private initializeTranscriber(sessionId: string): void {
     console.log(
-      `[AssemblyAI WS STT] Initializing persistent WebSocket connection for session: ${sessionId}`,
+      `[AssemblyAI STT] Initializing persistent transcriber connection for session: ${sessionId}`,
     );
 
     const session = {
-      ws: null as WebSocket | null,
-      wsReady: false,
-      wsConnectionPromise: null as Promise<void> | null,
+      transcriber: null as any,
+      transcriberReady: false,
+      transcriberConnectionPromise: null as Promise<void> | null,
       assemblySessionId: '',
       sessionExpiresAt: 0,
       inactivityTimeout: null as NodeJS.Timeout | null,
       lastActivityTime: Date.now(),
-      shouldStopProcessing: false,
     };
 
-    session.wsConnectionPromise = new Promise<void>((resolve, reject) => {
-      const wsUrl = this.buildWebSocketUrl();
-      console.log(
-        `[AssemblyAI WS STT] Connecting session ${sessionId} to: ${wsUrl}`,
-      );
-
-      session.ws = new WebSocket(wsUrl, {
-        headers: {
-          Authorization: this.apiKey,
-        },
-      });
-
-      session.ws.on('open', () => {
+    session.transcriberConnectionPromise = new Promise<void>(
+      (resolve, reject) => {
         console.log(
-          `[AssemblyAI WS STT] Session ${sessionId} WebSocket connection opened`,
+          `[AssemblyAI STT] Creating transcriber for session ${sessionId} with config: sampleRate=${this.sampleRate}, formatTurns=${this.formatTurns}, endOfTurnConfidenceThreshold=${this.endOfTurnConfidenceThreshold}, minEndOfTurnSilenceWhenConfident=${this.minEndOfTurnSilenceWhenConfident}ms, maxTurnSilence=${this.maxTurnSilence}ms, language=${this.language}`,
         );
-        session.wsReady = true;
-        resolve();
-      });
 
-      session.ws.on('message', (data: WebSocket.Data) => {
-        try {
-          const message = JSON.parse(data.toString());
-          const msgType = message.type;
+        // Create transcriber with configuration
+        // Note: AssemblyAI SDK expects silence durations in milliseconds
+        session.transcriber = this.client.streaming.transcriber({
+          sampleRate: this.sampleRate,
+          formatTurns: this.formatTurns,
+          endOfTurnConfidenceThreshold: this.endOfTurnConfidenceThreshold,
+          minEndOfTurnSilenceWhenConfident:
+            this.minEndOfTurnSilenceWhenConfident,
+          maxTurnSilence: this.maxTurnSilence,
+          ...(this.language && { language: this.language }),
+          ...(this.keytermsPrompt.length > 0 && {
+            keytermsPrompt: this.keytermsPrompt,
+          }),
+        });
 
-          if (msgType === 'Begin') {
-            session.assemblySessionId = message.id || message.session_id || '';
-            session.sessionExpiresAt = message.expires_at || 0;
-            console.log(
-              `[AssemblyAI WS STT] Session ${sessionId} began: Assembly ID=${session.assemblySessionId}, ExpiresAt=${session.sessionExpiresAt ? new Date(session.sessionExpiresAt * 1000).toISOString() : 'unknown'}`,
-            );
-          }
-        } catch (error) {
+        // Set up event listeners
+        session.transcriber.on('open', (event: any) => {
+          console.log(
+            `[AssemblyAI STT] Session ${sessionId} opened with Assembly ID: ${event.sessionId || event.session_id || 'unknown'}`,
+          );
+          session.assemblySessionId = event.sessionId || event.session_id || '';
+          session.sessionExpiresAt = event.expires_at || 0;
+          console.log(
+            `[AssemblyAI STT] Session ${sessionId} began: Assembly ID=${session.assemblySessionId}, ExpiresAt=${session.sessionExpiresAt ? new Date(session.sessionExpiresAt * 1000).toISOString() : 'unknown'}`,
+          );
+          session.transcriberReady = true;
+          resolve();
+        });
+
+        session.transcriber.on('error', (error: any) => {
           console.error(
-            `[AssemblyAI WS STT] Session ${sessionId} Error handling message:`,
+            `[AssemblyAI STT] Session ${sessionId} Transcriber Error:`,
             error,
           );
-        }
-      });
+          session.transcriberReady = false;
+          reject(error);
+        });
 
-      session.ws.on('error', (error: Error) => {
-        console.error(
-          `[AssemblyAI WS STT] Session ${sessionId} WebSocket Error:`,
-          error,
-        );
-        session.wsReady = false;
-        reject(error);
-      });
+        session.transcriber.on('close', (code: any, reason: any) => {
+          console.log(
+            `[AssemblyAI STT] Session ${sessionId} Transcriber closed: Status=${code}, Reason=${reason}`,
+          );
+          session.transcriberReady = false;
+        });
 
-      session.ws.on('close', (code: number, reason: Buffer) => {
+        // Connect to Assembly.AI
         console.log(
-          `[AssemblyAI WS STT] Session ${sessionId} WebSocket closed: Status=${code}, Reason=${reason.toString()}`,
+          `[AssemblyAI STT] Connecting session ${sessionId} to Assembly.AI...`,
         );
-        session.wsReady = false;
-      });
-    });
+        session.transcriber.connect().catch((error: any) => {
+          console.error(
+            `[AssemblyAI STT] Session ${sessionId} Connection error:`,
+            error,
+          );
+          reject(error);
+        });
+      },
+    );
 
     this.sessions.set(sessionId, session);
   }
@@ -264,23 +238,20 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
 
     const inactiveFor = Date.now() - session.lastActivityTime;
     console.log(
-      `[AssemblyAI WS STT] Closing connection for session ${sessionId} due to inactivity (inactive for ${inactiveFor}ms)`,
+      `[AssemblyAI STT] Closing connection for session ${sessionId} due to inactivity (inactive for ${inactiveFor}ms)`,
     );
 
-    // Signal any running audio processing loops to stop
-    session.shouldStopProcessing = true;
-
-    if (session.ws && session.wsReady) {
+    if (session.transcriber && session.transcriberReady) {
       try {
-        session.ws.close();
-        session.wsReady = false;
+        await session.transcriber.close();
+        session.transcriberReady = false;
         console.log(
-          `[AssemblyAI WS STT] Session ${sessionId} connection closed due to inactivity`,
+          `[AssemblyAI STT] Session ${sessionId} connection closed due to inactivity`,
         );
         this.sessions.delete(sessionId);
       } catch (error) {
         console.error(
-          `[AssemblyAI WS STT] Error closing session ${sessionId} connection due to inactivity:`,
+          `[AssemblyAI STT] Error closing session ${sessionId} connection due to inactivity:`,
           error,
         );
       }
@@ -288,7 +259,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
   }
 
   /**
-   * Ensure WebSocket connection is ready for a session, reconnect if needed
+   * Ensure transcriber connection is ready for a session, reconnect if needed
    */
   private async ensureConnection(sessionId: string): Promise<void> {
     let session = this.sessions.get(sessionId);
@@ -302,48 +273,44 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
 
     if (
       !session ||
-      !session.ws ||
-      !session.wsReady ||
-      session.ws.readyState !== WebSocket.OPEN ||
+      !session.transcriber ||
+      !session.transcriberReady ||
       isExpired
     ) {
       if (isExpired) {
         console.log(
-          `[AssemblyAI WS STT] Session ${sessionId} expired, reconnecting...`,
+          `[AssemblyAI STT] Session ${sessionId} expired, reconnecting...`,
         );
       } else {
         console.log(
-          `[AssemblyAI WS STT] Session ${sessionId} connection not ready, connecting...`,
+          `[AssemblyAI STT] Session ${sessionId} connection not ready, connecting...`,
         );
       }
 
       // Close existing connection if any
-      if (session?.ws && session.ws.readyState === WebSocket.OPEN) {
+      if (session?.transcriber) {
         try {
-          session.ws.close();
+          await session.transcriber.close();
         } catch (e) {
           console.warn(
-            `[AssemblyAI WS STT] Error closing old connection for session ${sessionId}:`,
+            `[AssemblyAI STT] Error closing old connection for session ${sessionId}:`,
             e,
           );
         }
       }
 
-      this.initializeWebSocket(sessionId);
+      this.initializeTranscriber(sessionId);
       session = this.sessions.get(sessionId)!;
     }
 
-    await session.wsConnectionPromise;
-
-    // Reset the stop flag for new processing
-    session.shouldStopProcessing = false;
+    await session.transcriberConnectionPromise;
 
     // Reset inactivity timer on successful connection
     this.resetInactivityTimer(sessionId);
   }
 
   /**
-   * Process audio stream and transcribe using Assembly.AI WebSocket
+   * Process audio stream and transcribe using Assembly.AI
    */
   async process(
     context: ProcessContext,
@@ -398,7 +365,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
     }
 
     console.log(
-      `[AssemblyAI WS STT - Iteration ${iteration}] Starting transcription for session: ${sessionId}`,
+      `[AssemblyAI STT - Iteration ${iteration}] Starting transcription for session: ${sessionId}`,
     );
 
     // State tracking
@@ -420,100 +387,70 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       _turnReject = reject;
     });
 
-    // Set up temporary message handler for this process call
-    const messageHandler = (data: WebSocket.Data) => {
-      try {
-        const message = JSON.parse(data.toString());
-        const msgType = message.type;
-
-        if (msgType === 'Turn') {
-          // Ignore turn events if we've already decided to stop
-          if (shouldStopProcessing) {
-            console.log(
-              `[${new Date().toISOString()}] [AssemblyAI WS STT - Iteration ${iteration}] Ignoring turn event (already stopping): ${message.transcript}`,
-            );
-            return;
-          }
-
-          const transcript = message.transcript || '';
-          const utterance = message.utterance || '';
-          const isFinal = message.end_of_turn; // message.turn_is_formatted
-
-          if (!transcript) {
-            return;
-          }
-
-          this.sendCancellation(sessionId, nextInteractionId);
-
-          // Send partial transcript updates to the client for real-time feedback
-          if (!isFinal) {
-            // Send partial transcript to client
-            const textToSend = utterance || transcript;
-            if (textToSend) {
-              this.sendPartialTranscript(
-                sessionId,
-                nextInteractionId,
-                textToSend,
-              );
-            }
-            console.log(
-              `[${new Date().toISOString()}] [AssemblyAI WS STT - Iteration ${iteration}] Partial turn: ${textToSend}`,
-            );
-            return;
-          }
-
-          console.log(
-            `[${new Date().toISOString()}] [AssemblyAI WS STT - Iteration ${iteration}] Turn detected: ${transcript}, ${JSON.stringify(message)}`,
-          );
-
-          transcriptText = transcript;
-          turnDetected = true;
-          shouldStopProcessing = true;
-          turnResolve(transcript);
-        } else if (msgType === 'Termination') {
-          const audioDuration = message.audio_duration_seconds;
-          const sessionDuration = message.session_duration_seconds;
-          console.log(
-            `[AssemblyAI WS STT - Iteration ${iteration}] Session Terminated: Audio Duration=${audioDuration}s, Session Duration=${sessionDuration}s`,
-          );
-        }
-      } catch (error) {
-        console.error(
-          `[AssemblyAI WS STT - Iteration ${iteration}] Error handling message:`,
-          error,
+    // Set up temporary turn event listener for this process call
+    const turnHandler = (turn: any) => {
+      // Ignore turn events if we've already decided to stop
+      if (shouldStopProcessing) {
+        console.log(
+          `[${new Date().toISOString()}] [AssemblyAI STT - Iteration ${iteration}] Ignoring turn event (already stopping): ${turn.transcript}`,
         );
+        return;
       }
+
+      if (!turn.transcript) {
+        return;
+      }
+
+      // Check if this is a final turn (end_of_turn = true means the turn is complete)
+      const isFinal = turn.end_of_turn;
+      const transcript = turn.transcript || '';
+      const utterance = turn.utterance || '';
+
+      // Send cancellation to stop any ongoing character response
+      this.sendCancellation(sessionId, nextInteractionId);
+
+      // Send partial transcript updates to the client for real-time feedback
+      if (!isFinal) {
+        // Send partial transcript to client
+        const textToSend = utterance || transcript;
+        if (textToSend) {
+          this.sendPartialTranscript(sessionId, nextInteractionId, textToSend);
+        }
+        console.log(
+          `[${new Date().toISOString()}] [AssemblyAI STT - Iteration ${iteration}] Partial turn: ${textToSend}`,
+        );
+        return;
+      }
+
+      console.log(
+        `[${new Date().toISOString()}] [AssemblyAI STT - Iteration ${iteration}] Turn detected: ${transcript}, ${JSON.stringify(turn)}`,
+      );
+      transcriptText = transcript;
+      turnDetected = true;
+      shouldStopProcessing = true; // Signal to stop processing audio
+      turnResolve(transcript);
     };
 
     try {
-      // Ensure WebSocket connection is ready (reuse existing or reconnect)
+      // Ensure transcriber connection is ready (reuse existing or reconnect)
       await this.ensureConnection(sessionId);
       const session = this.sessions.get(sessionId)!;
       console.log(
-        `[AssemblyAI WS STT - Iteration ${iteration}] Using established WebSocket connection for session ${sessionId}`,
+        `[AssemblyAI STT - Iteration ${iteration}] Using established transcriber connection for session ${sessionId}`,
       );
 
-      // Attach temporary message handler for this process call
-      if (session.ws) {
-        session.ws.on('message', messageHandler);
-      }
+      // Attach temporary turn event listener for this process call
+      session.transcriber.on('turn', turnHandler);
 
       // Process audio chunks and send to Assembly.AI
       const audioProcessingPromise = (async () => {
         try {
           console.log(
-            `[AssemblyAI WS STT - Iteration ${iteration}] Starting audio processing loop`,
+            `[AssemblyAI STT - Iteration ${iteration}] Starting audio processing loop`,
           );
 
           while (true) {
-            // Check if session was closed externally (e.g., due to inactivity)
-            if (session.shouldStopProcessing) {
-              console.log(
-                `[AssemblyAI WS STT - Iteration ${iteration}] Session closed externally - stopping audio processing`,
-              );
-              break;
-            }
-
+            // Don't check shouldStopProcessing before await - we need to consume any pending chunk
             const result: {
               data: Float32Array;
               sampleRate: number;
@@ -522,30 +459,29 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
 
             if (result.done) {
               console.log(
-                `[AssemblyAI WS STT - Iteration ${iteration}] Audio stream exhausted after ${audioChunkCount} chunks`,
+                `[AssemblyAI STT - Iteration ${iteration}] Audio stream exhausted after ${audioChunkCount} chunks`,
               );
               isStreamExhausted = true;
               break;
             }
 
             // Check if turn was detected while we were waiting for the chunk
+            // We still need to process this chunk to keep the stream in a valid state
             if (shouldStopProcessing) {
               console.log(
-                `[AssemblyAI WS STT - Iteration ${iteration}] Turn detected - stopping after processing chunk`,
+                `[AssemblyAI STT - Iteration ${iteration}] Turn detected - processing final chunk before stopping`,
               );
-              break;
-            }
-
-            // Double-check session wasn't closed while waiting for chunk
-            if (session.shouldStopProcessing) {
-              console.log(
-                `[AssemblyAI WS STT - Iteration ${iteration}] Session closed during chunk wait - stopping`,
-              );
-              break;
             }
 
             // Check if we have valid audio data
             if (!result.data || result.data.length === 0) {
+              // Even for empty chunks, check if we should stop after
+              if (shouldStopProcessing) {
+                console.log(
+                  `[AssemblyAI STT - Iteration ${iteration}] Stopping after empty chunk`,
+                );
+                break;
+              }
               continue;
             }
 
@@ -555,19 +491,12 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
             // Convert Float32Array to Int16Array (PCM16)
             const pcm16Data = this.convertToPCM16(result.data);
 
-            // Send audio data to Assembly.AI WebSocket
+            // Send audio data to Assembly.AI (send the buffer)
             try {
-              if (session.ws && session.ws.readyState === WebSocket.OPEN) {
-                // Send as Buffer from Int16Array
-                session.ws.send(Buffer.from(pcm16Data.buffer));
-              } else {
-                console.warn(
-                  `[AssemblyAI WS STT - Iteration ${iteration}] WebSocket not open, skipping chunk`,
-                );
-              }
+              session.transcriber.sendAudio(pcm16Data.buffer);
             } catch (sendError) {
               console.error(
-                `[AssemblyAI WS STT - Iteration ${iteration}] Error sending audio chunk:`,
+                `[AssemblyAI STT - Iteration ${iteration}] Error sending audio chunk:`,
                 sendError,
               );
               // Continue processing other chunks instead of failing completely
@@ -593,25 +522,47 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
 
             if (audioChunkCount % 20 === 0) {
               console.log(
-                `[AssemblyAI WS STT - Iteration ${iteration}] Processed ${audioChunkCount} chunks, ${totalAudioSamples} total samples, endpointing latency: ${endpointingLatency.toFixed(0)}ms`,
+                `[AssemblyAI STT - Iteration ${iteration}] Processed ${audioChunkCount} chunks, ${totalAudioSamples} total samples, endpointing latency: ${endpointingLatency.toFixed(0)}ms`,
               );
+            }
+
+            // After processing the chunk, check if we should stop
+            if (shouldStopProcessing) {
+              console.log(
+                `[AssemblyAI STT - Iteration ${iteration}] Stopping audio processing after processing chunk`,
+              );
+              break;
             }
           }
         } catch (error) {
           console.error(
-            `[AssemblyAI WS STT - Iteration ${iteration}] Error processing audio:`,
+            `[AssemblyAI STT - Iteration ${iteration}] Error processing audio:`,
             error,
           );
           errorOccurred = true;
           errorMessage = error instanceof Error ? error.message : String(error);
           throw error;
         } finally {
-          // Remove the temporary message handler
+          // Remove the temporary turn event listener
           console.log(
-            `[AssemblyAI WS STT - Iteration ${iteration}] Cleaning up message handler`,
+            `[AssemblyAI STT - Iteration ${iteration}] Cleaning up turn handler`,
           );
-          if (session.ws) {
-            session.ws.off('message', messageHandler);
+          try {
+            // Try removeListener first (Node.js EventEmitter standard)
+            if (typeof session.transcriber.removeListener === 'function') {
+              session.transcriber.removeListener('turn', turnHandler);
+            } else if (typeof session.transcriber.off === 'function') {
+              session.transcriber.off('turn', turnHandler);
+            } else {
+              console.warn(
+                `[AssemblyAI STT - Iteration ${iteration}] No method available to remove turn handler`,
+              );
+            }
+          } catch (removeError) {
+            console.error(
+              `[AssemblyAI STT - Iteration ${iteration}] Error removing turn handler:`,
+              removeError,
+            );
           }
         }
       })();
@@ -622,17 +573,17 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         audioProcessingPromise.then(() => ''), // Return empty string if stream ends without turn
       ]);
 
-      // // Ensure audio processing is stopped
-      // shouldStopProcessing = true;
+      // Ensure audio processing is stopped
+      shouldStopProcessing = true;
 
-      // // Wait a bit for the audio processing to finish cleanup
-      // await audioProcessingPromise.catch(() => {
-      //   // Ignore errors during cleanup
-      // });
+      // Wait a bit for the audio processing to finish cleanup
+      await audioProcessingPromise.catch(() => {
+        // Ignore errors during cleanup
+      });
 
       // Return DataStreamWithMetadata with transcript in metadata
       console.log(
-        `[${new Date().toISOString()}] [AssemblyAI WS STT - Iteration ${iteration}] Returning DataStreamWithMetadata with transcript: "${transcriptText}", endpointing latency: ${endpointingLatency.toFixed(0)}ms`,
+        `[${new Date().toISOString()}] [AssemblyAI STT - Iteration ${iteration}] Returning DataStreamWithMetadata with transcript: "${transcriptText}", endpointing latency: ${endpointingLatency.toFixed(0)}ms`,
       );
 
       return new DataStreamWithMetadata(audioStream, {
@@ -654,7 +605,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       });
     } catch (error) {
       console.error(
-        `[AssemblyAI WS STT - Iteration ${iteration}] Transcription failed:`,
+        `[AssemblyAI STT - Iteration ${iteration}] Transcription failed:`,
         error,
       );
 
@@ -678,63 +629,6 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         error_message: error instanceof Error ? error.message : String(error),
         endpointing_latency_ms: endpointingLatency,
       });
-    }
-  }
-
-  /**
-   * Send cancellation signal to client to stop current interaction
-   */
-  private sendCancellation(sessionId: string, interactionId?: string): void {
-    const connection = this.connections[sessionId];
-    if (!connection || !connection.ws) {
-      console.warn(
-        `[AssemblyAI WS STT] Cannot send cancellation - no connection for session: ${sessionId}`,
-      );
-      return;
-    }
-
-    const effectiveInteractionId =
-      interactionId || connection.state?.interactionId || v4();
-    console.log(
-      `[AssemblyAI WS STT] Sending cancellation for interaction: ${effectiveInteractionId}`,
-    );
-
-    try {
-      const cancelEvent = EventFactory.cancelResponse(effectiveInteractionId);
-      connection.ws.send(JSON.stringify(cancelEvent));
-    } catch (error) {
-      console.error('[AssemblyAI WS STT] Error sending cancellation:', error);
-    }
-  }
-
-  /**
-   * Send partial transcript update to the client for real-time feedback
-   */
-  private sendPartialTranscript(
-    sessionId: string,
-    interactionId: string,
-    text: string,
-  ): void {
-    const connection = this.connections[sessionId];
-    if (!connection || !connection.ws) {
-      console.warn(
-        `[AssemblyAI WS STT] Cannot send partial transcript - no connection for session: ${sessionId}`,
-      );
-      return;
-    }
-
-    try {
-      const textEvent = EventFactory.text(text, interactionId, {
-        isUser: true,
-      });
-      // Mark as non-final for partial transcripts
-      textEvent.text.final = false;
-      connection.ws.send(JSON.stringify(textEvent));
-    } catch (error) {
-      console.error(
-        '[AssemblyAI WS STT] Error sending partial transcript:',
-        error,
-      );
     }
   }
 
@@ -782,8 +676,65 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       // Result is the sample index where speech is detected, or -1 if no speech
       return vadResult !== -1;
     } catch (error) {
-      console.error('[AssemblyAI WS STT] VAD detection failed:', error);
+      console.error('[AssemblyAI STT] VAD detection failed:', error);
       return false; // Assume no speech on error
+    }
+  }
+
+  /**
+   * Send cancellation signal to client to stop current interaction
+   */
+  private sendCancellation(sessionId: string, interactionId?: string): void {
+    const connection = this.connections[sessionId];
+    if (!connection || !connection.ws) {
+      console.warn(
+        `[AssemblyAI STT] Cannot send cancellation - no connection for session: ${sessionId}`,
+      );
+      return;
+    }
+
+    const effectiveInteractionId =
+      interactionId || connection.state?.interactionId || v4();
+    console.log(
+      `[AssemblyAI STT] Sending cancellation for interaction: ${effectiveInteractionId}`,
+    );
+
+    try {
+      const cancelEvent = EventFactory.cancelResponse(effectiveInteractionId);
+      connection.ws.send(JSON.stringify(cancelEvent));
+    } catch (error) {
+      console.error('[AssemblyAI STT] Error sending cancellation:', error);
+    }
+  }
+
+  /**
+   * Send partial transcript update to the client for real-time feedback
+   */
+  private sendPartialTranscript(
+    sessionId: string,
+    interactionId: string,
+    text: string,
+  ): void {
+    const connection = this.connections[sessionId];
+    if (!connection || !connection.ws) {
+      console.warn(
+        `[AssemblyAI STT] Cannot send partial transcript - no connection for session: ${sessionId}`,
+      );
+      return;
+    }
+
+    try {
+      const textEvent = EventFactory.text(text, interactionId, {
+        isUser: true,
+      });
+      // Mark as non-final for partial transcripts
+      textEvent.text.final = false;
+      connection.ws.send(JSON.stringify(textEvent));
+    } catch (error) {
+      console.error(
+        '[AssemblyAI STT] Error sending partial transcript:',
+        error,
+      );
     }
   }
 
@@ -792,7 +743,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
    */
   async destroy(): Promise<void> {
     console.log(
-      `[AssemblyAI WS STT] Destroying node and closing ${this.sessions.size} WebSocket connection(s)`,
+      `[AssemblyAI STT] Destroying node and closing ${this.sessions.size} transcriber connection(s)`,
     );
 
     // Clean up all sessions
@@ -801,26 +752,23 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       if (session.inactivityTimeout) {
         clearTimeout(session.inactivityTimeout);
         console.log(
-          `[AssemblyAI WS STT] Inactivity timeout cleared for session ${sessionId}`,
+          `[AssemblyAI STT] Inactivity timeout cleared for session ${sessionId}`,
         );
       }
 
-      if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+      if (session.transcriber && session.transcriberReady) {
         try {
-          // Send termination message
-          const terminateMessage = { type: 'Terminate' };
-          session.ws.send(JSON.stringify(terminateMessage));
-
-          // Wait a bit for the message to be sent, then close
-          await new Promise((resolve) => setTimeout(resolve, 100));
-          session.ws.close();
-          session.wsReady = false;
           console.log(
-            `[AssemblyAI WS STT] Session ${sessionId} WebSocket connection closed`,
+            `[AssemblyAI STT] Closing transcriber connection for session ${sessionId}`,
+          );
+          await session.transcriber.close();
+          session.transcriberReady = false;
+          console.log(
+            `[AssemblyAI STT] Session ${sessionId} transcriber connection closed`,
           );
         } catch (error) {
           console.error(
-            `[AssemblyAI WS STT] Error closing WebSocket for session ${sessionId}:`,
+            `[AssemblyAI STT] Error closing transcriber for session ${sessionId}:`,
             error,
           );
         }
@@ -828,6 +776,6 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
     }
 
     this.sessions.clear();
-    console.log('[AssemblyAI WS STT] All sessions cleaned up');
+    console.log('[AssemblyAI STT] All sessions cleaned up');
   }
 }
