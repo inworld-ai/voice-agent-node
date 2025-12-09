@@ -90,19 +90,17 @@ The client will start on port 3000 and should automatically open in your default
    - For voice input, click the microphone icon to unmute yourself. Click again to mute yourself.
    - For text input, enter text in the input field and press Enter to send it to the agent
 
-## Features
-
-### Knowledge
+## Knowledge
 
 The voice agent supports a knowledge system that allows you to provide domain-specific information to the agent. When enabled, the agent can retrieve relevant knowledge records based on the user's input to provide more accurate and contextual responses.
 
-#### How It Works
+### How It Works
 
 1. **Knowledge Storage**: Knowledge records are stored in `server/config/knowledge.json` as an array of strings
 2. **Retrieval**: When a user message passes safety checks, the system retrieves the most relevant knowledge records using semantic similarity
 3. **Context Injection**: Retrieved knowledge is included in the dialog prompt, giving the LLM access to relevant information
 
-#### Configuration
+### Configuration
 
 1. **Create Knowledge File**: Create or edit `server/config/knowledge.json`:
    ```json
@@ -118,7 +116,7 @@ The voice agent supports a knowledge system that allows you to provide domain-sp
 
 3. **Automatic Enablement**: Knowledge retrieval is automatically enabled when `knowledge.json` contains valid records
 
-#### Best Practices
+### Best Practices
 
 - Keep knowledge records concise and focused
 - Each record should be self-contained and informative
@@ -126,11 +124,11 @@ The voice agent supports a knowledge system that allows you to provide domain-sp
 - Organize related information into separate records
 - Update knowledge records as your domain evolves
 
-### Memory
+## Memory
 
 The voice agent includes a sophisticated memory system that allows the agent to remember and learn from past conversations. The memory system consists of two types of memories:
 
-#### Flash Memory
+### Flash Memory
 
 **Purpose**: Captures important facts and details from recent conversations
 
@@ -146,7 +144,7 @@ The voice agent includes a sophisticated memory system that allows the agent to 
 - `MEMORY_SIMILARITY_THRESHOLD` - Similarity threshold for memory retrieval (default: 0.3)
 - `MAX_RETURNED_MEMORIES` - Maximum number of memories to return (default: 3)
 
-#### Long-Term Memory
+### Long-Term Memory
 
 **Purpose**: Creates high-level summaries of conversations over time
 
@@ -159,8 +157,7 @@ The voice agent includes a sophisticated memory system that allows the agent to 
 
 **Configuration**:
 - `LONG_TERM_MEMORY_INTERVAL` - Number of turns between long-term memory updates (default: 10)
-
-#### Memory Storage
+### Memory Storage
 
 Memories are stored per session in JSON files. By default, memory files are stored in the system's temporary directory (`/tmp/voice-agent-memory/` on Unix systems). Each session has its own memory file named `{sessionId}.json`.
 
@@ -170,14 +167,14 @@ Memories are stored per session in JSON files. By default, memory files are stor
 - `RESULT_MERGE_MAX_FLASH_MEMORIES` - Maximum flash memories to keep (default: 200)
 - `RESULT_MERGE_MAX_LONG_TERM_MEMORIES` - Maximum long-term memories to keep (default: 200)
 
-#### Memory LLM Configuration
+### Memory LLM Configuration
 
 You can configure separate LLM models for memory processing:
 
 - `MEMORY_LLM_PROVIDER` - LLM provider for memory processing (default: same as main LLM)
 - `MEMORY_LLM_MODEL` - LLM model for memory processing (default: same as main LLM)
 
-#### How Memory Works
+### How Memory Works
 
 1. **Memory Retrieval**: When a user sends a message, the system retrieves relevant memories from both flash and long-term memory using semantic similarity
 2. **Context Injection**: Retrieved memories are included in the dialog prompt
@@ -186,7 +183,7 @@ You can configure separate LLM models for memory processing:
    - **Long-Term Memory**: Updated every N turns (default: 10) to create conversation summaries
 4. **Memory Storage**: Updated memories are merged with existing memories, deduplicated, and saved to disk
 
-#### Memory Templates
+### Memory Templates
 
 Memory processing uses Jinja templates located in `server/templates/`:
 - `flash_memory_prompt.jinja` - Template for flash memory extraction
@@ -194,7 +191,7 @@ Memory processing uses Jinja templates located in `server/templates/`:
 
 You can customize these templates to change how memories are extracted and summarized.
 
-### Safety
+## Safety
 
 The voice agent includes built-in safety filtering to detect and block inappropriate content. See [SAFETY.md](SAFETY.md) for detailed information on configuring and using safety features.
 
