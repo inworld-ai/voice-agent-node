@@ -172,7 +172,7 @@ export class InworldGraphWrapper {
 
     const ttsNode = new RemoteTTSNode({
       id: `tts-node${postfix}`,
-      speakerId: voiceId, // Default voice, overridden by TTSRequest
+      speakerId: voiceId, // Default voice (fallback only - TTSRequestBuilderNode overrides this per session)
       modelId: ttsModelId,
       sampleRate: TTS_SAMPLE_RATE,
       temperature: 0.8,

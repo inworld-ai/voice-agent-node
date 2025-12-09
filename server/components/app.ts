@@ -3,6 +3,7 @@ import { VADFactory } from '@inworld/runtime/primitives/vad';
 import { v4 } from 'uuid';
 const { validationResult } = require('express-validator');
 
+import { DEFAULT_VOICE_ID } from '../../constants';
 import { parseEnvironmentVariables } from '../helpers';
 import { Connection } from '../types';
 import { InworldGraphWrapper } from './graph';
@@ -11,7 +12,6 @@ export class InworldApp {
   apiKey: string;
   llmModelName: string;
   llmProvider: string;
-  voiceId: string;
   vadModelPath: string;
   graphVisualizationEnabled: boolean;
   disableAutoInterruption: boolean; // Flag to disable graph-based auto-interruptions (default: false, meaning auto-interruptions are enabled)
@@ -40,7 +40,6 @@ export class InworldApp {
     this.apiKey = this.env.apiKey;
     this.llmModelName = this.env.llmModelName;
     this.llmProvider = this.env.llmProvider;
-    this.voiceId = this.env.voiceId;
     this.vadModelPath = this.env.vadModelPath;
     this.graphVisualizationEnabled = this.env.graphVisualizationEnabled;
     this.disableAutoInterruption = this.env.disableAutoInterruption;
@@ -58,7 +57,7 @@ export class InworldApp {
       apiKey: this.apiKey,
       llmModelName: this.llmModelName,
       llmProvider: this.llmProvider,
-      voiceId: this.voiceId, // Default voice (overridden by TTSRequestBuilderNode)
+      voiceId: DEFAULT_VOICE_ID, // Default voice (overridden by TTSRequestBuilderNode)
       connections: this.connections,
       graphVisualizationEnabled: this.graphVisualizationEnabled,
       disableAutoInterruption: this.disableAutoInterruption,
@@ -94,7 +93,7 @@ export class InworldApp {
         apiKey: this.apiKey,
         llmModelName: this.llmModelName,
         llmProvider: this.llmProvider,
-        voiceId: this.voiceId, // Default voice (overridden by TTSRequestBuilderNode)
+        voiceId: DEFAULT_VOICE_ID, // Default voice (overridden by TTSRequestBuilderNode)
         connections: this.connections,
         withAudioInput: true,
         graphVisualizationEnabled: this.graphVisualizationEnabled,
@@ -147,13 +146,12 @@ export class InworldApp {
     }
 
     // Get voice from client request (set by template selection)
-    // Falls back to DEFAULT_VOICE_ID if client doesn't send one
+    // Falls back to DEFAULT_VOICE_ID only if client doesn't send one
+    // The client should always send a voiceId from template selection
     // Store voice in session state for TTSRequestBuilderNode to use
-    const sessionVoiceId = req.body.voiceId || this.voiceId;
-
-    console.log(
-      `\n[Session ${sessionId}] Creating new session with STT: ${sttService}, Voice: ${sessionVoiceId}`,
-    );
+    const sessionVoiceId = req.body.voiceId !== undefined && req.body.voiceId !== null 
+      ? req.body.voiceId 
+      : DEFAULT_VOICE_ID;
 
     this.connections[sessionId] = {
       state: {
