@@ -9,30 +9,26 @@ The voice agent includes built-in safety filtering to detect and block inappropr
 
 The safety system uses two configuration files:
 
-1. **Keyword List** (`server/config/profanity.json`) - **Not included in repository** - You must create your own
-2. **Safety Classifier Model** (`server/config/safety_classifier_model_weights.json`) - Included in repository
+1. **Keyword List** (`server/config/profanity.json`)
+2. **Safety Classifier Model** (`server/config/safety_classifier_model_weights.json`)
 
 ### Configuring Safety Keywords
 
-By default, the safety system looks for a keyword list at `server/config/profanity.json`. This file is **not included in the repository** for privacy and security reasons. You must create your own keyword list.
+By default, the safety system looks for a keyword list at `server/config/profanity.json`.
 
-### Step 1: Create Your Keyword List
+### Customizing Your Keyword List
 
-1. Copy the template file:
-   ```bash
-   cp server/config/profanity.json.template server/config/profanity.json
-   ```
+The included `server/config/profanity.json` contains an example list. You can edit this file to add or remove keywords as needed. The file should contain a JSON array of strings:
 
-2. Edit `server/config/profanity.json` and add your keywords as a JSON array:
-   ```json
-   [
-     "keyword1",
-     "keyword2",
-     "keyword3"
-   ]
-   ```
+```json
+[
+  "keyword1",
+  "keyword2",
+  "keyword3"
+]
+```
 
-### Step 2: Customize Paths (Optional)
+### Customize Paths (Optional)
 
 If you want to use different locations for your safety configuration files, set these environment variables in your `server/.env` file:
 
