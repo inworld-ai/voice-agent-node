@@ -5,7 +5,6 @@ import {
   DEFAULT_PROVIDER,
   DEFAULT_TTS_MODEL_ID,
   DEFAULT_VAD_MODEL_PATH,
-  DEFAULT_VOICE_ID,
 } from '../constants';
 
 export const parseEnvironmentVariables = () => {
@@ -27,7 +26,6 @@ export const parseEnvironmentVariables = () => {
     apiKey: process.env.INWORLD_API_KEY,
     llmModelName: process.env.LLM_MODEL_NAME || DEFAULT_LLM_MODEL_NAME,
     llmProvider: process.env.LLM_PROVIDER || DEFAULT_PROVIDER,
-    voiceId: process.env.VOICE_ID || DEFAULT_VOICE_ID,
     vadModelPath:
       process.env.VAD_MODEL_PATH ||
       path.join(__dirname, DEFAULT_VAD_MODEL_PATH),
