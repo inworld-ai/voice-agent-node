@@ -129,5 +129,3 @@ export const AVAILABLE_VOICES: Voice[] = [
     languages: ['en'],
   },
 ];
-
-export const DEFAULT_VOICE_ID = 'Dennis';

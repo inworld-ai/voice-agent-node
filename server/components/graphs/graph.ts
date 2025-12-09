@@ -41,6 +41,7 @@ import { TextInputTextExtractorNode } from '../nodes/text_input_text_extractor_n
 import { TextInputSafetyMergerNode } from '../nodes/safety/text_input_safety_merger_node';
 import { TextInputStateUpdaterNode } from '../nodes/text_input_state_updater_node';
 import { TranscriptExtractorNode } from '../nodes/stt/transcript_extractor_node';
+import { TTSRequestBuilderNode } from '../nodes/tts_request_builder_node';
 import { createFlashSubgraph } from './flash_subgraph';
 import { createLongTermSubgraph } from './long_term_subgraph';
 import { ResultMergeNode } from '../nodes/memory/result_merge_node';
@@ -302,6 +303,8 @@ export class InworldGraphWrapper {
       ttsModelId,
     } = props;
 
+    // Create unique postfix based on audio input and STT provider
+    // Voice is now handled dynamically by TTSRequestBuilderNode
     let postfix = withAudioInput ? '-with-audio-input' : '-with-text-input';
     if (withAudioInput) {
       postfix += '-assembly-ai';
@@ -333,9 +336,14 @@ export class InworldGraphWrapper {
       reportToClient: true,
     });
 
+    const ttsRequestBuilderNode = new TTSRequestBuilderNode({
+      id: `tts-request-builder-node${postfix}`,
+      connections,
+    });
+
     const ttsNode = new RemoteTTSNode({
       id: `tts-node${postfix}`,
-      speakerId: voiceId,
+      speakerId: voiceId, // Default voice, overridden by TTSRequest
       modelId: ttsModelId,
       sampleRate: TTS_SAMPLE_RATE,
       temperature: 0.8,
@@ -606,6 +614,7 @@ export class InworldGraphWrapper {
       .addNode(longTermSubgraphNode)
       .addNode(resultMergeNode)
       .addNode(saveMemoryNode)
+      .addNode(ttsRequestBuilderNode)
       .addNode(ttsNode)
       .addNode(stateUpdateNode);
 
@@ -708,7 +717,8 @@ export class InworldGraphWrapper {
       .addEdge(longTermSubgraphNode, resultMergeNode, { optional: true })
       // Memory: Save snapshot in saveMemoryNode (separate node to break cycle)
       .addEdge(resultMergeNode, saveMemoryNode, { optional: true })
-      .addEdge(textChunkingNode, ttsNode);
+      .addEdge(textChunkingNode, ttsRequestBuilderNode)
+      .addEdge(ttsRequestBuilderNode, ttsNode);
 
     if (withAudioInput) {
       if (!props.assemblyAIApiKey) {

@@ -47,6 +47,8 @@ export class MessageHandler {
           sessionId,
         } as TextInput;
 
+        // Use shared text graph
+        // Voice is selected dynamically by TTSRequestBuilderNode based on session state
         this.addToQueue(() =>
           this.executeGraph({
             sessionId,
@@ -107,8 +109,8 @@ export class MessageHandler {
           sessionId,
         };
 
-        // Get the appropriate graph based on this session's STT service selection
-        // Graph will be created lazily if it doesn't exist yet
+        // Get the shared audio graph
+        // Voice is selected dynamically by TTSRequestBuilderNode based on session state
         const graphWrapper = await this.inworldApp.getGraphForSTTService(
           connection.sttService,
         );

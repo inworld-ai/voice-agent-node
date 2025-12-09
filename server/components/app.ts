@@ -22,9 +22,8 @@ export class InworldApp {
 
   vadClient: any;
 
+  // Shared graphs for all sessions (voice selected dynamically via TTSRequestBuilderNode)
   graphWithTextInput: InworldGraphWrapper;
-
-  // Lazily-created graph for Assembly.AI STT
   private graphWithAudioInputAssemblyAI?: InworldGraphWrapper;
 
   // Environment configuration for lazy graph creation
@@ -53,12 +52,13 @@ export class InworldApp {
       modelPath: this.vadModelPath,
     });
 
-    // Create text-only graph
+    // Create shared text-only graph
+    // Voice is selected dynamically per session via TTSRequestBuilderNode
     this.graphWithTextInput = await InworldGraphWrapper.create({
       apiKey: this.apiKey,
       llmModelName: this.llmModelName,
       llmProvider: this.llmProvider,
-      voiceId: this.voiceId,
+      voiceId: this.voiceId, // Default voice (overridden by TTSRequestBuilderNode)
       connections: this.connections,
       graphVisualizationEnabled: this.graphVisualizationEnabled,
       disableAutoInterruption: this.disableAutoInterruption,
@@ -77,25 +77,12 @@ export class InworldApp {
   /**
    * Get the Assembly.AI audio graph.
    * Graph is created lazily on first request.
+   * Voice is selected dynamically per session via TTSRequestBuilderNode.
    */
   async getGraphForSTTService(
     _sttService?: string,
   ): Promise<InworldGraphWrapper> {
-    const baseAudioConfig = {
-      apiKey: this.apiKey,
-      llmModelName: this.llmModelName,
-      llmProvider: this.llmProvider,
-      voiceId: this.voiceId,
-      connections: this.connections,
-      withAudioInput: true,
-      graphVisualizationEnabled: this.graphVisualizationEnabled,
-      disableAutoInterruption: this.disableAutoInterruption,
-      ttsModelId: this.ttsModelId,
-      vadClient: this.vadClient,
-    };
-
     if (!this.env.assemblyAIApiKey) {
-      // This should not happen since we validate at load time, but defensive check
       throw new Error(
         `Assembly.AI STT requested but ASSEMBLY_AI_API_KEY is not configured. This should have been caught during session load.`,
       );
@@ -104,7 +91,16 @@ export class InworldApp {
     if (!this.graphWithAudioInputAssemblyAI) {
       console.log('  → Creating Assembly.AI STT graph (first use)...');
       this.graphWithAudioInputAssemblyAI = await InworldGraphWrapper.create({
-        ...baseAudioConfig,
+        apiKey: this.apiKey,
+        llmModelName: this.llmModelName,
+        llmProvider: this.llmProvider,
+        voiceId: this.voiceId, // Default voice (overridden by TTSRequestBuilderNode)
+        connections: this.connections,
+        withAudioInput: true,
+        graphVisualizationEnabled: this.graphVisualizationEnabled,
+        disableAutoInterruption: this.disableAutoInterruption,
+        ttsModelId: this.ttsModelId,
+        vadClient: this.vadClient,
         useAssemblyAI: true,
         assemblyAIApiKey: this.env.assemblyAIApiKey,
       });
@@ -150,8 +146,13 @@ export class InworldApp {
       });
     }
 
+    // Get voice from client request (set by template selection)
+    // Falls back to DEFAULT_VOICE_ID if client doesn't send one
+    // Store voice in session state for TTSRequestBuilderNode to use
+    const sessionVoiceId = req.body.voiceId || this.voiceId;
+
     console.log(
-      `\n[Session ${sessionId}] Creating new session with STT: ${sttService}`,
+      `\n[Session ${sessionId}] Creating new session with STT: ${sttService}, Voice: ${sessionVoiceId}`,
     );
 
     this.connections[sessionId] = {
@@ -166,7 +167,7 @@ export class InworldApp {
         ],
         agent,
         userName: req.body.userName,
-        voiceId: req.body.voiceId || this.voiceId, // Use request voiceId or default
+        voiceId: sessionVoiceId, // TTSRequestBuilderNode reads this for dynamic voice selection
       },
       ws: null,
       sttService, // Store STT service choice for this session
@@ -206,7 +207,7 @@ export class InworldApp {
     this.connections = {};
     this.graphWithTextInput.destroy();
 
-    // Destroy pre-created audio graph
+    // Destroy audio graph if it was created
     this.graphWithAudioInputAssemblyAI?.destroy();
 
     stopInworldRuntime();
