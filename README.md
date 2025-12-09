@@ -92,9 +92,9 @@ The client will start on port 3000 and should automatically open in your default
 
 ## Features
 
-### Knowledge Base
+### Knowledge
 
-The voice agent supports a knowledge base system that allows you to provide domain-specific information to the agent. When enabled, the agent can retrieve relevant knowledge records based on the user's input to provide more accurate and contextual responses.
+The voice agent supports a knowledge system that allows you to provide domain-specific information to the agent. When enabled, the agent can retrieve relevant knowledge records based on the user's input to provide more accurate and contextual responses.
 
 #### How It Works
 
@@ -126,7 +126,7 @@ The voice agent supports a knowledge base system that allows you to provide doma
 - Organize related information into separate records
 - Update knowledge records as your domain evolves
 
-### Memory System
+### Memory
 
 The voice agent includes a sophisticated memory system that allows the agent to remember and learn from past conversations. The memory system consists of two types of memories:
 
@@ -194,7 +194,7 @@ Memory processing uses Jinja templates located in `server/templates/`:
 
 You can customize these templates to change how memories are extracted and summarized.
 
-### Safety Features
+### Safety
 
 The voice agent includes built-in safety filtering to detect and block inappropriate content. See [SAFETY.md](SAFETY.md) for detailed information on configuring and using safety features.
 
