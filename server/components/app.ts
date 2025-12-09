@@ -22,11 +22,7 @@ export class InworldApp {
 
   vadClient: any;
 
-  // Shared graphs for all sessions (voice selected dynamically via TTSRequestBuilderNode)
-  graphWithTextInput: InworldGraphWrapper;
-  private graphWithAudioInputAssemblyAI?: InworldGraphWrapper;
-
-  // Environment configuration for lazy graph creation
+  // Environment configuration
   private env: ReturnType<typeof parseEnvironmentVariables>;
 
   promptTemplate: string;
@@ -52,49 +48,40 @@ export class InworldApp {
       modelPath: this.vadModelPath,
     });
 
-    // Create shared text-only graph
-    // Voice is selected dynamically per session via TTSRequestBuilderNode
-    this.graphWithTextInput = await InworldGraphWrapper.create({
-      apiKey: this.apiKey,
-      llmModelName: this.llmModelName,
-      llmProvider: this.llmProvider,
-      voiceId: this.voiceId, // Default voice (overridden by TTSRequestBuilderNode)
-      connections: this.connections,
-      graphVisualizationEnabled: this.graphVisualizationEnabled,
-      disableAutoInterruption: this.disableAutoInterruption,
-      ttsModelId: this.ttsModelId,
-      vadClient: this.vadClient,
-    });
-
-    console.log('\n✓ Text input graph initialized');
-    console.log(
-      '✓ Audio input graph will be created lazily when first requested\n',
-    );
-
+    console.log('\n✓ VAD client initialized');
+    console.log('✓ Graphs will be created per session when "Create Agent" is pressed\n');
     console.log('✓ STT service: Assembly.AI\n');
   }
 
   /**
-   * Get the Assembly.AI audio graph.
-   * Graph is created lazily on first request.
-   * Voice is selected dynamically per session via TTSRequestBuilderNode.
+   * Get the Assembly.AI audio graph for a specific session.
+   * Graph is created per session when the session is loaded.
    */
   async getGraphForSTTService(
+    sessionId: string,
     _sttService?: string,
   ): Promise<InworldGraphWrapper> {
-    if (!this.env.assemblyAIApiKey) {
-      throw new Error(
-        `Assembly.AI STT requested but ASSEMBLY_AI_API_KEY is not configured. This should have been caught during session load.`,
-      );
+    const connection = this.connections[sessionId];
+    if (!connection) {
+      throw new Error(`Session ${sessionId} not found`);
     }
 
-    if (!this.graphWithAudioInputAssemblyAI) {
-      console.log('  → Creating Assembly.AI STT graph (first use)...');
-      this.graphWithAudioInputAssemblyAI = await InworldGraphWrapper.create({
+    if (!connection.graphWithAudioInput) {
+      if (!this.env.assemblyAIApiKey) {
+        throw new Error(
+          `Assembly.AI STT requested but ASSEMBLY_AI_API_KEY is not configured. This should have been caught during session load.`,
+        );
+      }
+
+      // Get knowledge records from session
+      const knowledgeRecords = connection.state.agent.knowledge || [];
+
+      console.log(`  → Creating Assembly.AI STT graph for session ${sessionId}...`);
+      connection.graphWithAudioInput = await InworldGraphWrapper.create({
         apiKey: this.apiKey,
         llmModelName: this.llmModelName,
         llmProvider: this.llmProvider,
-        voiceId: this.voiceId, // Default voice (overridden by TTSRequestBuilderNode)
+        voiceId: connection.state.voiceId || this.voiceId,
         connections: this.connections,
         withAudioInput: true,
         graphVisualizationEnabled: this.graphVisualizationEnabled,
@@ -103,12 +90,12 @@ export class InworldApp {
         vadClient: this.vadClient,
         useAssemblyAI: true,
         assemblyAIApiKey: this.env.assemblyAIApiKey,
+        knowledgeRecords,
+        sessionId, // Pass sessionId to make node IDs unique
       });
-      console.log('  ✓ Assembly.AI STT graph created');
-    } else {
-      console.log(`  → Using Assembly.AI STT graph`);
+      console.log(`  ✓ Assembly.AI STT graph created for session ${sessionId}`);
     }
-    return this.graphWithAudioInputAssemblyAI;
+    return connection.graphWithAudioInput;
   }
 
   async load(req: any, res: any) {
@@ -120,9 +107,28 @@ export class InworldApp {
       return res.status(400).json({ errors: errors.array() });
     }
 
+    // Parse knowledge if it's a JSON string (sent from client)
+    let knowledge: string[] | undefined;
+    if (req.body.agent?.knowledge) {
+      if (typeof req.body.agent.knowledge === 'string') {
+        try {
+          knowledge = JSON.parse(req.body.agent.knowledge);
+          if (!Array.isArray(knowledge)) {
+            knowledge = undefined;
+          }
+        } catch {
+          // If parsing fails, treat as empty
+          knowledge = undefined;
+        }
+      } else if (Array.isArray(req.body.agent.knowledge)) {
+        knowledge = req.body.agent.knowledge;
+      }
+    }
+
     const agent = {
       ...req.body.agent,
       id: v4(),
+      knowledge, // Store parsed knowledge array
     };
 
     const sessionId = req.query.sessionId;
@@ -155,6 +161,19 @@ export class InworldApp {
       `\n[Session ${sessionId}] Creating new session with STT: ${sttService}, Voice: ${sessionVoiceId}`,
     );
 
+    // Clean up existing graphs if session already exists (e.g., user went back to settings)
+    const existingConnection = this.connections[sessionId];
+    if (existingConnection) {
+      console.log(`[Session ${sessionId}] Cleaning up existing graphs...`);
+      if (existingConnection.graphWithTextInput) {
+        await existingConnection.graphWithTextInput.destroy();
+      }
+      if (existingConnection.graphWithAudioInput) {
+        await existingConnection.graphWithAudioInput.destroy();
+      }
+    }
+
+    // Create or update connection
     this.connections[sessionId] = {
       state: {
         interactionId: systemMessageId, // Initialize with system message ID
@@ -169,9 +188,33 @@ export class InworldApp {
         userName: req.body.userName,
         voiceId: sessionVoiceId, // TTSRequestBuilderNode reads this for dynamic voice selection
       },
-      ws: null,
+      ws: existingConnection?.ws || null, // Preserve WebSocket if it exists
       sttService, // Store STT service choice for this session
     };
+
+    // Create graphs for this session with knowledge records
+    const knowledgeRecords = knowledge || [];
+    console.log(
+      `[Session ${sessionId}] Creating graphs with ${knowledgeRecords.length} knowledge record(s)`,
+    );
+
+    // Create text input graph for this session
+    const graphWithTextInput = await InworldGraphWrapper.create({
+      apiKey: this.apiKey,
+      llmModelName: this.llmModelName,
+      llmProvider: this.llmProvider,
+      voiceId: sessionVoiceId,
+      connections: this.connections,
+      graphVisualizationEnabled: this.graphVisualizationEnabled,
+      disableAutoInterruption: this.disableAutoInterruption,
+      ttsModelId: this.ttsModelId,
+      vadClient: this.vadClient,
+      knowledgeRecords,
+      sessionId, // Pass sessionId to make node IDs unique
+    });
+
+    this.connections[sessionId].graphWithTextInput = graphWithTextInput;
+    console.log(`[Session ${sessionId}] ✓ Text input graph created`);
 
     res.end(JSON.stringify({ agent }));
   }
@@ -198,18 +241,34 @@ export class InworldApp {
         .json({ error: `Session not found for sessionId: ${sessionId}` });
     }
 
-    this.connections[sessionId].unloaded = true;
+    const connection = this.connections[sessionId];
+    connection.unloaded = true;
+
+    // Destroy session graphs
+    if (connection.graphWithTextInput) {
+      connection.graphWithTextInput.destroy();
+    }
+    if (connection.graphWithAudioInput) {
+      connection.graphWithAudioInput.destroy();
+    }
+
+    // Remove connection
+    delete this.connections[sessionId];
 
     res.end(JSON.stringify({ message: 'Session unloaded' }));
   }
 
   shutdown() {
+    // Destroy all session graphs
+    for (const [sessionId, connection] of Object.entries(this.connections)) {
+      if (connection.graphWithTextInput) {
+        connection.graphWithTextInput.destroy();
+      }
+      if (connection.graphWithAudioInput) {
+        connection.graphWithAudioInput.destroy();
+      }
+    }
     this.connections = {};
-    this.graphWithTextInput.destroy();
-
-    // Destroy audio graph if it was created
-    this.graphWithAudioInputAssemblyAI?.destroy();
-
     stopInworldRuntime();
   }
 }

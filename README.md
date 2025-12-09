@@ -83,7 +83,8 @@ The client will start on port 3000 and should automatically open in your default
 ### Step 5: Configure and Use the Application
 
 1. Define the agent settings:
-   - Enter the agent system prompt or select one of the predefined characters
+   - Enter the agent system prompt or select one of the predefined character presets
+   - Optionally add knowledge entries in the "Knowledge" tab to provide domain-specific information
    - Click "Create Agent"
 
 2. Interact with the agent:
@@ -96,25 +97,28 @@ The voice agent supports a knowledge system that allows you to provide domain-sp
 
 ### How It Works
 
-1. **Knowledge Storage**: Knowledge records are stored in `server/config/knowledge.json` as an array of strings
+1. **Knowledge Management**: Knowledge records are managed through the UI in the configuration panel. You can add, edit, and remove knowledge entries directly in the application.
 2. **Retrieval**: When a user message passes safety checks, the system retrieves the most relevant knowledge records using semantic similarity
 3. **Context Injection**: Retrieved knowledge is included in the dialog prompt, giving the LLM access to relevant information
 
 ### Configuration
 
-1. **Create Knowledge File**: Create or edit `server/config/knowledge.json`:
-   ```json
-   [
-     "Your first knowledge record here",
-     "Another knowledge record",
-     "More domain-specific information"
-   ]
-   ```
+1. **Using the UI**:
+   - Navigate to the configuration panel when creating a new agent
+   - Click on the "Knowledge" tab
+   - Add knowledge entries using the "Add Knowledge Entry" button
+   - Edit or delete existing entries as needed
+   - Knowledge is automatically saved with your agent configuration
 
-2. **Environment Variables** (optional):
-   - `KNOWLEDGE_PATH` - Custom path to knowledge.json file (default: `server/config/knowledge.json`)
+2. **Character Presets**:
+   - Each character preset (AI Companion, Fantasy Character, Fitness Coach) comes with pre-configured knowledge entries
+   - When you select a character preset, the knowledge entries are automatically populated
+   - You can modify or add to these preset knowledge entries
 
-3. **Automatic Enablement**: Knowledge retrieval is automatically enabled when `knowledge.json` contains valid records
+3. **Knowledge Format**:
+   - Each knowledge entry should be a self-contained statement or fact
+   - Knowledge is stored as an array of strings
+   - Empty entries are automatically filtered out when saving
 
 ### Best Practices
 
@@ -240,7 +244,6 @@ voice-agent-node/
 │   │   ├── flash_memory_prompt.jinja
 │   │   └── long_term_prompt.jinja
 │   ├── config/                   # Configuration files
-│   │   ├── knowledge.json        # Knowledge base records
 │   │   ├── profanity.json        # Safety keywords
 │   │   └── safety_classifier_model_weights.json
 │   ├── models/

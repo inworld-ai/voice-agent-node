@@ -65,6 +65,8 @@ export interface Connection {
   currentAudioGraphExecution?: Promise<void>;
   sttService?: string; // STT service selection for this session
   memorySnapshot?: import('./components/nodes/memory/memory_types').MemorySnapshot; // Memory snapshot for this session
+  graphWithTextInput?: import('./components/graphs/graph').InworldGraphWrapper; // Graph for text input (per session)
+  graphWithAudioInput?: import('./components/graphs/graph').InworldGraphWrapper; // Graph for audio input (per session)
 }
 
 export type ConnectionsMap = {
@@ -91,6 +93,8 @@ export interface CreateGraphPropsInterface {
   vadClient?: any; // Shared VAD client for audio processing nodes (required for all audio input pipelines)
   useAssemblyAI?: boolean; // Use Assembly.AI streaming STT (default: true)
   assemblyAIApiKey?: string; // Assembly.AI API key (required)
+  knowledgeRecords?: string[]; // Knowledge records for this session
+  sessionId?: string; // Session ID to make node IDs unique per session
 }
 
 export interface InteractionInfo {

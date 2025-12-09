@@ -301,13 +301,22 @@ export class InworldGraphWrapper {
       connections,
       withAudioInput = false,
       ttsModelId,
+      knowledgeRecords = [],
+      sessionId,
     } = props;
 
-    // Create unique postfix based on audio input and STT provider
+    // Create unique postfix based on audio input, STT provider, and session ID
     // Voice is now handled dynamically by TTSRequestBuilderNode
+    // Session ID ensures node IDs are unique per session to avoid CallbackRegistry conflicts
     let postfix = withAudioInput ? '-with-audio-input' : '-with-text-input';
     if (withAudioInput) {
       postfix += '-assembly-ai';
+    }
+    // Add session ID to make node IDs unique per session
+    if (sessionId) {
+      // Use a short hash of sessionId to keep node IDs readable
+      const sessionHash = sessionId.substring(0, 8);
+      postfix += `-${sessionHash}`;
     }
 
     const dialogPromptBuilderNode = new DialogPromptBuilderNode({
@@ -538,39 +547,12 @@ export class InworldGraphWrapper {
       id: `text-input-safety-merger-node${postfix}`,
     });
 
-    // Load knowledge records from JSON file
-    // Use __dirname to get path relative to this file location (more reliable than process.cwd())
-    const DEFAULT_KNOWLEDGE_PATH = path.resolve(
-      __dirname,
-      '../..',
-      'config',
-      'knowledge.json',
-    );
-    const knowledgePath =
-      process.env.KNOWLEDGE_PATH || DEFAULT_KNOWLEDGE_PATH;
-    
-    let knowledgeRecords: string[] = [];
-    try {
-      const knowledgeData = JSON.parse(fs.readFileSync(knowledgePath, 'utf8'));
-      if (Array.isArray(knowledgeData)) {
-        knowledgeRecords = knowledgeData;
-      } else {
-        console.warn(
-          `Knowledge file ${knowledgePath} is not an array. Knowledge retrieval will be disabled.`,
-        );
-      }
-    } catch (error: any) {
-      console.warn(
-        `Could not load knowledge from ${knowledgePath}: ${error.message}. ` +
-          `Knowledge retrieval will be disabled. Please create ${knowledgePath} or set KNOWLEDGE_PATH environment variable.`,
-      );
-    }
-
-    // Create knowledge node
+    // Knowledge records are passed from the client configuration per session
+    // Create knowledge node with the provided knowledge records
     const knowledgeNode = new KnowledgeNode({
       id: `knowledge-node${postfix}`,
       knowledgeId: `knowledge/${v7()}`,
-      knowledgeRecords,
+      knowledgeRecords: knowledgeRecords,
       maxCharsPerChunk: 1000,
       maxChunksPerDocument: 10,
       retrievalConfig: {

@@ -47,14 +47,17 @@ export class MessageHandler {
           sessionId,
         } as TextInput;
 
-        // Use shared text graph
-        // Voice is selected dynamically by TTSRequestBuilderNode based on session state
+        // Use session-specific text graph
+        const connection = this.inworldApp.connections[sessionId];
+        if (!connection || !connection.graphWithTextInput) {
+          throw new Error(`Graph not found for session ${sessionId}`);
+        }
         this.addToQueue(() =>
           this.executeGraph({
             sessionId,
             input: textInput,
             interactionId: textInteractionId,
-            graphWrapper: this.inworldApp.graphWithTextInput,
+            graphWrapper: connection.graphWithTextInput!,
           }),
         );
 
@@ -109,9 +112,10 @@ export class MessageHandler {
           sessionId,
         };
 
-        // Get the shared audio graph
+        // Get the session-specific audio graph
         // Voice is selected dynamically by TTSRequestBuilderNode based on session state
         const graphWrapper = await this.inworldApp.getGraphForSTTService(
+          sessionId,
           connection.sttService,
         );
 
