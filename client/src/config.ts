@@ -7,6 +7,8 @@ export const config = {
     import.meta.env.VITE_APP_UNLOAD_URL || `http://localhost:${PORT}/unload`,
   SESSION_URL:
     import.meta.env.VITE_APP_SESSION_URL || `ws://localhost:${PORT}/session`,
+  VOICES_URL:
+    import.meta.env.VITE_APP_VOICES_URL || `http://localhost:${PORT}/voices`,
   ENABLE_LATENCY_REPORTING:
     import.meta.env.VITE_ENABLE_LATENCY_REPORTING === 'true' || false,
 };

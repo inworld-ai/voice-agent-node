@@ -27,7 +27,7 @@ export const parseEnvironmentVariables = () => {
     apiKey: process.env.INWORLD_API_KEY,
     llmModelName: process.env.LLM_MODEL_NAME || DEFAULT_LLM_MODEL_NAME,
     llmProvider: process.env.LLM_PROVIDER || DEFAULT_PROVIDER,
-    voiceId: process.env.VOICE_ID || DEFAULT_VOICE_ID,
+    voiceId: DEFAULT_VOICE_ID,
     vadModelPath:
       process.env.VAD_MODEL_PATH ||
       path.join(__dirname, DEFAULT_VAD_MODEL_PATH),

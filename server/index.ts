@@ -29,6 +29,40 @@ app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
+app.get('/voices', async (req, res) => {
+  try {
+    const apiKey = process.env.INWORLD_API_KEY;
+    if (!apiKey) {
+      return res.status(500).json({ error: 'INWORLD_API_KEY not configured' });
+    }
+
+    const response = await fetch('https://api.inworld.ai/tts/v1/voices', {
+      method: 'GET',
+      headers: {
+        'Authorization': `Basic ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return res.status(response.status).json({ 
+        error: 'Failed to fetch voices',
+        details: errorText 
+      });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error: any) {
+    console.error('Error fetching voices:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch voices',
+      details: error.message 
+    });
+  }
+});
+
 webSocket.on('connection', (ws, request) => {
   const { query } = parse(request.url!, true);
   const sessionId = query.sessionId?.toString();
