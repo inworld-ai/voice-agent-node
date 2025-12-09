@@ -27,7 +27,24 @@ cd voice-agent-node
 
 Copy `server/.env-sample` to `server/.env` and fill all required variables. Some variables are optional and can be left empty. In this case default values will be used.
 
-Get your API key from the [Inworld Portal](https://platform.inworld.ai/).
+**Required API Keys:**
+
+1. **Inworld API Key**: Get your API key from the [Inworld Portal](https://platform.inworld.ai/).
+
+2. **Assembly.AI API Key**: Required for speech-to-text functionality.
+   - Create an account at [Assembly.AI](https://www.assemblyai.com/)
+   - Get your API key from the [Assembly.AI Dashboard](https://www.assemblyai.com/app/account)
+   - Set `ASSEMBLY_AI_API_KEY` in your `server/.env` file
+
+**About Assembly.AI STT:**
+
+Assembly.AI provides high-quality speech-to-text with:
+- **High Accuracy**: Advanced AI models for accurate transcription
+- **Real-time Streaming**: Low-latency streaming transcription for live conversations
+- **Built-in Speech Segmentation**: Automatic detection of speech boundaries and pauses
+- **Punctuation and Formatting**: Automatic punctuation and capitalization
+
+The system processes audio streams in real-time, providing partial transcripts as speech is detected and final transcripts when speech segments are complete. Voice Activity Detection (VAD) identifies when users are speaking and automatically segments the audio stream.
 
 ### Step 3: Configure Client Environment Variables (Optional)
 
@@ -72,8 +89,114 @@ The client will start on port 3000 and should automatically open in your default
 2. Interact with the agent:
    - For voice input, click the microphone icon to unmute yourself. Click again to mute yourself.
    - For text input, enter text in the input field and press Enter to send it to the agent
-  
-## Repo Structure
+
+## Knowledge Base
+
+The voice agent supports a knowledge base system that allows you to provide domain-specific information to the agent. When enabled, the agent can retrieve relevant knowledge records based on the user's input to provide more accurate and contextual responses.
+
+### How It Works
+
+1. **Knowledge Storage**: Knowledge records are stored in `server/config/knowledge.json` as an array of strings
+2. **Retrieval**: When a user message passes safety checks, the system retrieves the most relevant knowledge records using semantic similarity
+3. **Context Injection**: Retrieved knowledge is included in the dialog prompt, giving the LLM access to relevant information
+
+### Configuration
+
+1. **Create Knowledge File**: Create or edit `server/config/knowledge.json`:
+   ```json
+   [
+     "Your first knowledge record here",
+     "Another knowledge record",
+     "More domain-specific information"
+   ]
+   ```
+
+2. **Environment Variables** (optional):
+   - `KNOWLEDGE_PATH` - Custom path to knowledge.json file (default: `server/config/knowledge.json`)
+
+3. **Automatic Enablement**: Knowledge retrieval is automatically enabled when `knowledge.json` contains valid records
+
+### Best Practices
+
+- Keep knowledge records concise and focused
+- Each record should be self-contained and informative
+- Use clear, descriptive language
+- Organize related information into separate records
+- Update knowledge records as your domain evolves
+
+## Memory System
+
+The voice agent includes a sophisticated memory system that allows the agent to remember and learn from past conversations. The memory system consists of two types of memories:
+
+### Flash Memory
+
+**Purpose**: Captures important facts and details from recent conversations
+
+**Characteristics**:
+- **Frequency**: Updated every 2 turns (configurable via `FLASH_MEMORY_INTERVAL`)
+- **Scope**: Processes the last 10 dialogue turns
+- **Content**: Extracts notable facts, preferences, plans, relationships, and key events
+- **Storage**: Stored with embeddings for semantic search
+- **Retrieval**: Automatically retrieved when relevant to user queries
+
+**Configuration**:
+- `FLASH_MEMORY_INTERVAL` - Number of turns between flash memory updates (default: 2)
+- `MEMORY_SIMILARITY_THRESHOLD` - Similarity threshold for memory retrieval (default: 0.3)
+- `MAX_RETURNED_MEMORIES` - Maximum number of memories to return (default: 3)
+
+### Long-Term Memory
+
+**Purpose**: Creates high-level summaries of conversations over time
+
+**Characteristics**:
+- **Frequency**: Updated every 10 turns (configurable via `LONG_TERM_MEMORY_INTERVAL`)
+- **Scope**: Processes the last 10 dialogue turns
+- **Content**: Generates conversation summaries and key themes
+- **Storage**: Stored with embeddings for semantic search
+- **Retrieval**: Automatically retrieved when relevant to user queries
+
+**Configuration**:
+- `LONG_TERM_MEMORY_INTERVAL` - Number of turns between long-term memory updates (default: 10)
+
+### Memory Storage
+
+Memories are stored per session in JSON files. By default, memory files are stored in the system's temporary directory (`/tmp/voice-agent-memory/` on Unix systems). Each session has its own memory file named `{sessionId}.json`.
+
+**Configuration**:
+- `MEMORY_STORAGE_DIR` - Custom directory for memory storage (default: system temp directory)
+- `RESULT_MERGE_SIMILARITY_THRESHOLD` - Threshold for deduplicating similar memories (default: 0.9)
+- `RESULT_MERGE_MAX_FLASH_MEMORIES` - Maximum flash memories to keep (default: 200)
+- `RESULT_MERGE_MAX_LONG_TERM_MEMORIES` - Maximum long-term memories to keep (default: 200)
+
+### Memory LLM Configuration
+
+You can configure separate LLM models for memory processing:
+
+- `MEMORY_LLM_PROVIDER` - LLM provider for memory processing (default: same as main LLM)
+- `MEMORY_LLM_MODEL` - LLM model for memory processing (default: same as main LLM)
+
+### How Memory Works
+
+1. **Memory Retrieval**: When a user sends a message, the system retrieves relevant memories from both flash and long-term memory using semantic similarity
+2. **Context Injection**: Retrieved memories are included in the dialog prompt
+3. **Memory Update**: After the agent responds, the system evaluates whether to update memories:
+   - **Flash Memory**: Updated every N turns (default: 2) to capture recent important facts
+   - **Long-Term Memory**: Updated every N turns (default: 10) to create conversation summaries
+4. **Memory Storage**: Updated memories are merged with existing memories, deduplicated, and saved to disk
+
+### Memory Templates
+
+Memory processing uses Jinja templates located in `server/templates/`:
+- `flash_memory_prompt.jinja` - Template for flash memory extraction
+- `long_term_prompt.jinja` - Template for long-term memory summarization
+
+You can customize these templates to change how memories are extracted and summarized.
+
+## Safety Features
+
+The voice agent includes built-in safety filtering to detect and block inappropriate content. See [SAFETY.md](SAFETY.md) for detailed information on configuring and using safety features.
+
+### Pipeline Overview
 
 ```
 voice-agent-node/
@@ -234,126 +357,7 @@ flowchart TB
     style TTS fill:#ccffcc,stroke:#333,stroke-width:2px,color:#000
 ```
 
-### STT Provider: Assembly.AI
-
-The server uses **Assembly.AI** as the Speech-to-Text provider, which offers:
-
-- **High Accuracy**: Advanced AI models for accurate transcription
-- **Real-time Streaming**: Low-latency streaming transcription for live conversations
-- **Built-in Speech Segmentation**: Automatic detection of speech boundaries and pauses
-- **Speaker Diarization**: Optional speaker identification (if enabled)
-- **Punctuation and Formatting**: Automatic punctuation and capitalization
-- **Custom Vocabulary**: Support for domain-specific terms and keywords
-
-Assembly.AI processes audio streams in real-time, providing partial transcripts as speech is detected and final transcripts when speech segments are complete. The system uses Voice Activity Detection (VAD) to identify when users are speaking and automatically segments the audio stream.
-
-**Configuration**: Set your `ASSEMBLY_AI_API_KEY` in the `server/.env` file. Get your API key from [Assembly.AI](https://www.assemblyai.com/).
-
-## Knowledge Base
-
-The voice agent supports a knowledge base system that allows you to provide domain-specific information to the agent. When enabled, the agent can retrieve relevant knowledge records based on the user's input to provide more accurate and contextual responses.
-
-### How It Works
-
-1. **Knowledge Storage**: Knowledge records are stored in `server/config/knowledge.json` as an array of strings
-2. **Retrieval**: When a user message passes safety checks, the system retrieves the most relevant knowledge records using semantic similarity
-3. **Context Injection**: Retrieved knowledge is included in the dialog prompt, giving the LLM access to relevant information
-
-### Configuration
-
-1. **Create Knowledge File**: Create or edit `server/config/knowledge.json`:
-   ```json
-   [
-     "Your first knowledge record here",
-     "Another knowledge record",
-     "More domain-specific information"
-   ]
-   ```
-
-2. **Environment Variables** (optional):
-   - `KNOWLEDGE_PATH` - Custom path to knowledge.json file (default: `server/config/knowledge.json`)
-
-3. **Automatic Enablement**: Knowledge retrieval is automatically enabled when `knowledge.json` contains valid records
-
-### Best Practices
-
-- Keep knowledge records concise and focused
-- Each record should be self-contained and informative
-- Use clear, descriptive language
-- Organize related information into separate records
-- Update knowledge records as your domain evolves
-
-## Memory System
-
-The voice agent includes a sophisticated memory system that allows the agent to remember and learn from past conversations. The memory system consists of two types of memories:
-
-### Flash Memory
-
-**Purpose**: Captures important facts and details from recent conversations
-
-**Characteristics**:
-- **Frequency**: Updated every 2 turns (configurable via `FLASH_MEMORY_INTERVAL`)
-- **Scope**: Processes the last 10 dialogue turns
-- **Content**: Extracts notable facts, preferences, plans, relationships, and key events
-- **Storage**: Stored with embeddings for semantic search
-- **Retrieval**: Automatically retrieved when relevant to user queries
-
-**Configuration**:
-- `FLASH_MEMORY_INTERVAL` - Number of turns between flash memory updates (default: 2)
-- `MEMORY_SIMILARITY_THRESHOLD` - Similarity threshold for memory retrieval (default: 0.3)
-- `MAX_RETURNED_MEMORIES` - Maximum number of memories to return (default: 3)
-
-### Long-Term Memory
-
-**Purpose**: Creates high-level summaries of conversations over time
-
-**Characteristics**:
-- **Frequency**: Updated every 10 turns (configurable via `LONG_TERM_MEMORY_INTERVAL`)
-- **Scope**: Processes the last 10 dialogue turns
-- **Content**: Generates conversation summaries and key themes
-- **Storage**: Stored with embeddings for semantic search
-- **Retrieval**: Automatically retrieved when relevant to user queries
-
-**Configuration**:
-- `LONG_TERM_MEMORY_INTERVAL` - Number of turns between long-term memory updates (default: 10)
-
-### Memory Storage
-
-Memories are stored per session in JSON files. By default, memory files are stored in the system's temporary directory (`/tmp/voice-agent-memory/` on Unix systems). Each session has its own memory file named `{sessionId}.json`.
-
-**Configuration**:
-- `MEMORY_STORAGE_DIR` - Custom directory for memory storage (default: system temp directory)
-- `RESULT_MERGE_SIMILARITY_THRESHOLD` - Threshold for deduplicating similar memories (default: 0.9)
-- `RESULT_MERGE_MAX_FLASH_MEMORIES` - Maximum flash memories to keep (default: 200)
-- `RESULT_MERGE_MAX_LONG_TERM_MEMORIES` - Maximum long-term memories to keep (default: 200)
-
-### Memory LLM Configuration
-
-You can configure separate LLM models for memory processing:
-
-- `MEMORY_LLM_PROVIDER` - LLM provider for memory processing (default: same as main LLM)
-- `MEMORY_LLM_MODEL` - LLM model for memory processing (default: same as main LLM)
-
-### How Memory Works
-
-1. **Memory Retrieval**: When a user sends a message, the system retrieves relevant memories from both flash and long-term memory using semantic similarity
-2. **Context Injection**: Retrieved memories are included in the dialog prompt
-3. **Memory Update**: After the agent responds, the system evaluates whether to update memories:
-   - **Flash Memory**: Updated every N turns (default: 2) to capture recent important facts
-   - **Long-Term Memory**: Updated every N turns (default: 10) to create conversation summaries
-4. **Memory Storage**: Updated memories are merged with existing memories, deduplicated, and saved to disk
-
-### Memory Templates
-
-Memory processing uses Jinja templates located in `server/templates/`:
-- `flash_memory_prompt.jinja` - Template for flash memory extraction
-- `long_term_prompt.jinja` - Template for long-term memory summarization
-
-You can customize these templates to change how memories are extracted and summarized.
-
-## Safety Features
-
-The voice agent includes built-in safety filtering to detect and block inappropriate content. See [SAFETY.md](SAFETY.md) for detailed information on configuring and using safety features.
+## Repo Structure
 
 ## Troubleshooting
 
