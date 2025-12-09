@@ -66,8 +66,7 @@ The client will start on port 3000 and should automatically open in your default
 ### Step 5: Configure and Use the Application
 
 1. Define the agent settings:
-   - Enter the agent system prompt
-   - Select an Speech to Text service
+   - Enter the agent system prompt or select one of the predefined characters
    - Click "Create Agent"
 
 2. Interact with the agent:
