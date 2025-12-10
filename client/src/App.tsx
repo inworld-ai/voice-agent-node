@@ -408,11 +408,26 @@ function App() {
           requiredEnvVar: envVar,
         });
       } else {
-        // Generic error handling
+        // Handle graph creation errors
+        const errorMessage = data.details || data.error || response.statusText;
+        const mainError = data.error || 'Failed to create agent';
+        
         toast.error(
-          `Failed to create session: ${data.errors || response.statusText}`,
+          `${mainError}${errorMessage && errorMessage !== mainError ? `\n\n${errorMessage}` : ''}`,
+          {
+            duration: 10000,
+            style: {
+              maxWidth: '500px',
+              whiteSpace: 'pre-line',
+            },
+          },
         );
-        console.log(response.statusText, ': ', data.errors);
+        console.error('Graph Creation Error:', {
+          error: data.error,
+          details: data.details,
+          status: response.status,
+          statusText: response.statusText,
+        });
       }
 
       return;

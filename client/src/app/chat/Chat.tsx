@@ -2,6 +2,7 @@ import { ArrowBackRounded, ArrowUpward, Mic } from '@mui/icons-material';
 import {
   Box,
   Button,
+  CircularProgress,
   Collapse,
   Fade,
   IconButton,
@@ -322,7 +323,18 @@ export function Chat(props: ChatProps) {
                     backgroundColor: '#CCCCCC',
                     color: 'white',
                   },
-                  '&::before': !isRecording
+                  '&::before': !isLoaded
+                    ? {
+                        content: '""',
+                        position: 'absolute',
+                        width: '56px',
+                        height: '56px',
+                        borderRadius: '50%',
+                        backgroundColor: '#CCCCCC',
+                        opacity: 0.2,
+                        animation: 'loading-pulse 1.5s ease-in-out infinite',
+                      }
+                    : !isRecording
                     ? {
                         content: '""',
                         position: 'absolute',
@@ -346,6 +358,10 @@ export function Chat(props: ChatProps) {
                         animation: 'recording-pulse 2s infinite',
                       }
                     : {},
+                  '@keyframes loading-pulse': {
+                    '0%, 100%': { transform: 'scale(1)', opacity: 0.2 },
+                    '50%': { transform: 'scale(1.1)', opacity: 0.1 },
+                  },
                   '@keyframes subtle-pulse': {
                     '0%': { transform: 'scale(1)', opacity: 0.06 },
                     '50%': { transform: 'scale(1.05)', opacity: 0.03 },
@@ -365,24 +381,92 @@ export function Chat(props: ChatProps) {
                 )}
               </IconButton>
 
-              <Typography
-                variant="body2"
-                sx={{
-                  color: isRecording ? '#222222' : (!isLoaded ? '#CCCCCC' : '#817973'),
-                  fontSize: '14px',
-                  fontFamily: 'Inter, Arial, sans-serif',
-                  fontWeight: 500,
-                  textAlign: 'center',
-                  mt: 0.5,
-                  transition: 'color 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
-                }}
-              >
-                {!isLoaded
-                  ? 'Loading...'
-                  : isRecording
-                  ? 'Listening... Tap to stop'
-                  : 'Tap to start speaking'}
-              </Typography>
+              {!isLoaded ? (
+                <Box
+                  sx={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: 1.5,
+                    mt: 0.5,
+                    '@keyframes loading-dots': {
+                      '0%, 20%': { opacity: 0 },
+                      '50%': { opacity: 1 },
+                      '100%': { opacity: 0 },
+                    },
+                  }}
+                >
+                  <CircularProgress
+                    size={20}
+                    thickness={4}
+                    sx={{
+                      color: '#817973',
+                      '& .MuiCircularProgress-circle': {
+                        strokeLinecap: 'round',
+                      },
+                    }}
+                  />
+                  <Typography
+                    variant="body2"
+                    sx={{
+                      color: '#817973',
+                      fontSize: '14px',
+                      fontFamily: 'Inter, Arial, sans-serif',
+                      fontWeight: 500,
+                      textAlign: 'center',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.5,
+                    }}
+                  >
+                    <Box component="span">Initializing agent</Box>
+                    <Box
+                      component="span"
+                      sx={{
+                        display: 'inline-block',
+                        animation: 'loading-dots 1.4s infinite 0s',
+                      }}
+                    >
+                      ·
+                    </Box>
+                    <Box
+                      component="span"
+                      sx={{
+                        display: 'inline-block',
+                        animation: 'loading-dots 1.4s infinite 0.2s',
+                      }}
+                    >
+                      ·
+                    </Box>
+                    <Box
+                      component="span"
+                      sx={{
+                        display: 'inline-block',
+                        animation: 'loading-dots 1.4s infinite 0.4s',
+                      }}
+                    >
+                      ·
+                    </Box>
+                  </Typography>
+                </Box>
+              ) : (
+                <Typography
+                  variant="body2"
+                  sx={{
+                    color: isRecording ? '#222222' : '#817973',
+                    fontSize: '14px',
+                    fontFamily: 'Inter, Arial, sans-serif',
+                    fontWeight: 500,
+                    textAlign: 'center',
+                    mt: 0.5,
+                    transition: 'color 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                  }}
+                >
+                  {isRecording
+                    ? 'Listening... Tap to stop'
+                    : 'Tap to start speaking'}
+                </Typography>
+              )}
 
               {!isRecording && (
                 <Fade in={isLoaded} timeout={300}>
@@ -442,7 +526,7 @@ export function Chat(props: ChatProps) {
                     value={text}
                     onChange={handleTextChange}
                     onKeyPress={handleTextKeyPress}
-                    placeholder={!isLoaded ? "Loading..." : "Type a message..."}
+                    placeholder={!isLoaded ? "Initializing..." : "Type a message..."}
                     variant="standard"
                     autoFocus
                     disabled={!isLoaded}
@@ -587,7 +671,7 @@ export function Chat(props: ChatProps) {
                 onKeyPress={handleTextKeyPress}
                 placeholder={
                   !isLoaded
-                    ? 'Loading...'
+                    ? 'Initializing...'
                     : isRecording
                     ? 'Listening... Tap mic to stop'
                     : 'Type a message...'

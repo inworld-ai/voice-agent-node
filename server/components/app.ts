@@ -198,29 +198,238 @@ export class InworldApp {
       `[Session ${sessionId}] Creating graphs with ${knowledgeRecords.length} knowledge record(s)`,
     );
 
-    // Create text input graph for this session
-    const graphWithTextInput = await InworldGraphWrapper.create({
-      apiKey: this.apiKey,
-      llmModelName: this.llmModelName,
-      llmProvider: this.llmProvider,
-      voiceId: sessionVoiceId,
-      connections: this.connections,
-      graphVisualizationEnabled: this.graphVisualizationEnabled,
-      disableAutoInterruption: this.disableAutoInterruption,
-      ttsModelId: this.ttsModelId,
-      vadClient: this.vadClient,
-      knowledgeRecords,
-      sessionId, // Pass sessionId to make node IDs unique
-    });
+    let graphWithTextInput: InworldGraphWrapper | null = null;
+    let graphWithAudioInput: InworldGraphWrapper | null = null;
 
-    this.connections[sessionId].graphWithTextInput = graphWithTextInput;
-    console.log(`[Session ${sessionId}] ✓ Text input graph created`);
+    try {
+      // Create text input graph for this session
+      try {
+        graphWithTextInput = await InworldGraphWrapper.create({
+          apiKey: this.apiKey,
+          llmModelName: this.llmModelName,
+          llmProvider: this.llmProvider,
+          voiceId: sessionVoiceId,
+          connections: this.connections,
+          graphVisualizationEnabled: this.graphVisualizationEnabled,
+          disableAutoInterruption: this.disableAutoInterruption,
+          ttsModelId: this.ttsModelId,
+          vadClient: this.vadClient,
+          knowledgeRecords,
+          sessionId, // Pass sessionId to make node IDs unique
+        });
 
-    res.end(JSON.stringify({ agent }));
+        this.connections[sessionId].graphWithTextInput = graphWithTextInput;
+        console.log(`[Session ${sessionId}] ✓ Text input graph created`);
+      } catch (error: any) {
+        console.error(`[Session ${sessionId}] Error creating text input graph:`, error);
+        const errorMessage = error?.message || 'Unknown error';
+        // Clean up connection if graph creation failed
+        delete this.connections[sessionId];
+        return res.status(500).json({
+          error: `Failed to create text input graph: ${errorMessage}`,
+          details: errorMessage.includes('Deadline Exceeded')
+            ? 'The TTS service timed out. Please check your API key and network connection, then try again.'
+            : errorMessage,
+        });
+      }
+
+      // Create audio input graph for this session
+      try {
+        graphWithAudioInput = await InworldGraphWrapper.create({
+          apiKey: this.apiKey,
+          llmModelName: this.llmModelName,
+          llmProvider: this.llmProvider,
+          voiceId: sessionVoiceId,
+          connections: this.connections,
+          withAudioInput: true,
+          graphVisualizationEnabled: this.graphVisualizationEnabled,
+          disableAutoInterruption: this.disableAutoInterruption,
+          ttsModelId: this.ttsModelId,
+          vadClient: this.vadClient,
+          useAssemblyAI: true,
+          assemblyAIApiKey: this.env.assemblyAIApiKey,
+          knowledgeRecords,
+          sessionId, // Pass sessionId to make node IDs unique
+        });
+
+        this.connections[sessionId].graphWithAudioInput = graphWithAudioInput;
+        console.log(`[Session ${sessionId}] ✓ Audio input graph created`);
+      } catch (error: any) {
+        console.error(`[Session ${sessionId}] Error creating audio input graph:`, error);
+        const errorMessage = error?.message || 'Unknown error';
+        
+        // Clean up the text graph if it was created
+        if (graphWithTextInput) {
+          try {
+            await graphWithTextInput.destroy();
+          } catch (destroyError) {
+            console.error(`[Session ${sessionId}] Error destroying text graph during cleanup:`, destroyError);
+          }
+        }
+        
+        // Clean up connection if graph creation failed
+        delete this.connections[sessionId];
+        return res.status(500).json({
+          error: `Failed to create audio input graph: ${errorMessage}`,
+          details: errorMessage.includes('Deadline Exceeded')
+            ? 'The TTS service timed out. Please check your API key and network connection, then try again.'
+            : errorMessage,
+        });
+      }
+
+      // Warm up both graphs with a test message (ignore output)
+      console.log(`[Session ${sessionId}] Warming up graphs...`);
+      try {
+        await this.warmupGraphs(sessionId);
+        console.log(`[Session ${sessionId}] ✓ Graphs warmed up`);
+      } catch (error) {
+        console.error(`[Session ${sessionId}] Error warming up graphs:`, error);
+        // Continue anyway - warmup failure shouldn't block agent creation
+        // But log it so we know there might be a delay on first interaction
+      }
+
+      res.end(JSON.stringify({ agent }));
+    } catch (error: any) {
+      // Catch any unexpected errors during graph creation
+      console.error(`[Session ${sessionId}] Unexpected error during graph creation:`, error);
+      
+      // Clean up any partially created graphs
+      if (graphWithTextInput) {
+        try {
+          await graphWithTextInput.destroy();
+        } catch (destroyError) {
+          console.error(`[Session ${sessionId}] Error destroying text graph during cleanup:`, destroyError);
+        }
+      }
+      if (graphWithAudioInput) {
+        try {
+          await graphWithAudioInput.destroy();
+        } catch (destroyError) {
+          console.error(`[Session ${sessionId}] Error destroying audio graph during cleanup:`, destroyError);
+        }
+      }
+      
+      // Clean up connection
+      delete this.connections[sessionId];
+      
+      const errorMessage = error?.message || 'Unknown error';
+      return res.status(500).json({
+        error: `Failed to create agent: ${errorMessage}`,
+        details: errorMessage.includes('Deadline Exceeded')
+          ? 'The TTS service timed out. Please check your API key and network connection, then try again.'
+          : errorMessage,
+      });
+    }
   }
 
   private createSystemMessage(agent: any, userName: string) {
     return agent.systemPrompt.replace('{userName}', userName);
+  }
+
+  /**
+   * Warm up both text and audio graphs by executing them with test messages.
+   * This pre-initializes the graphs so they're ready when the user starts interacting.
+   */
+  private async warmupGraphs(sessionId: string): Promise<void> {
+    const connection = this.connections[sessionId];
+    if (!connection) {
+      throw new Error(`Session ${sessionId} not found`);
+    }
+
+    // Save the original state to restore after warmup
+    const originalMessages = [...connection.state.messages];
+    const originalInteractionId = connection.state.interactionId;
+
+    const warmupInteractionId = v4();
+    const warmupText = 'Hello'; // Simple test message
+
+    try {
+      // Warm up text graph
+      if (connection.graphWithTextInput) {
+        console.log(`[Session ${sessionId}] Warming up text graph...`);
+        const textInput = {
+          text: warmupText,
+          interactionId: warmupInteractionId,
+          sessionId,
+        };
+
+        try {
+          const { outputStream } = await connection.graphWithTextInput.graph.start(
+            textInput,
+            {
+              dataStoreContent: {
+                sessionId,
+                state: connection.state,
+              },
+            },
+          );
+
+          // Consume and ignore the output stream
+          for await (const _ of outputStream) {
+            // Ignore all output - we're just warming up the graph
+          }
+          console.log(`[Session ${sessionId}] ✓ Text graph warmed up`);
+        } catch (error) {
+          console.error(`[Session ${sessionId}] Error warming up text graph:`, error);
+          throw error;
+        }
+      }
+
+      // Warm up audio graph
+      if (connection.graphWithAudioInput) {
+        console.log(`[Session ${sessionId}] Warming up audio graph...`);
+        
+        // Create an empty audio stream that immediately ends
+        // This allows the graph to initialize without processing actual audio
+        async function* emptyAudioStream() {
+          // Yield nothing - stream ends immediately
+        }
+
+        const taggedStream = Object.assign(emptyAudioStream(), {
+          type: 'Audio',
+        });
+
+        const audioStreamInput = {
+          sessionId,
+          state: connection.state,
+        };
+
+        try {
+          const { outputStream } = await connection.graphWithAudioInput.graph.start(
+            taggedStream,
+            {
+              dataStoreContent: {
+                sessionId,
+                state: connection.state,
+              },
+            },
+          );
+
+          // Consume and ignore the output stream
+          // Use a timeout to avoid hanging if the graph doesn't produce output quickly
+          const timeoutPromise = new Promise<void>((resolve) => {
+            setTimeout(() => resolve(), 5000); // 5 second timeout
+          });
+
+          const streamPromise = (async () => {
+            for await (const _ of outputStream) {
+              // Ignore all output - we're just warming up the graph
+            }
+          })();
+
+          await Promise.race([streamPromise, timeoutPromise]);
+          console.log(`[Session ${sessionId}] ✓ Audio graph warmed up`);
+        } catch (error) {
+          console.error(`[Session ${sessionId}] Error warming up audio graph:`, error);
+          // Don't throw - audio graph warmup failure is less critical
+          // The graph will still work, just might be slower on first use
+        }
+      }
+    } finally {
+      // Restore the original state (remove any test messages added during warmup)
+      connection.state.messages = originalMessages;
+      connection.state.interactionId = originalInteractionId;
+    }
   }
 
   async unload(req: any, res: any) {

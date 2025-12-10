@@ -313,11 +313,47 @@ export class MessageHandler {
     try {
       await result.processResponse({
         TTSOutputStream: async (ttsStream: GraphTypes.TTSOutputStream) => {
+          // Collect all chunks to identify the last one for fade-out
+          const chunks: any[] = [];
           for await (const chunk of ttsStream) {
-            const decodedData = Buffer.from(chunk.audio?.data, 'base64');
+            chunks.push(chunk);
+          }
+          
+          for (let i = 0; i < chunks.length; i++) {
+            const chunk = chunks[i];
+            const isLastChunk = i === chunks.length - 1;
+            
+            if (!chunk.audio?.data) continue;
+            
+            const decodedData = Buffer.from(chunk.audio.data, 'base64');
+            // Ensure buffer length is a multiple of 4 (Float32 is 4 bytes)
+            // Pad with zeros instead of truncating to avoid cutting off valid audio data
+            const remainder = decodedData.length % 4;
+            let alignedBuffer = decodedData;
+            if (remainder !== 0) {
+              // Pad with zeros to align to 4-byte boundary
+              const padding = Buffer.alloc(4 - remainder);
+              alignedBuffer = Buffer.concat([decodedData, padding]);
+            }
+            
+            const float32Array = new Float32Array(
+              alignedBuffer.buffer,
+              alignedBuffer.byteOffset,
+              alignedBuffer.length / 4,
+            );
+            
+            // Apply a short fade-out only to the last chunk to prevent end-of-audio blips
+            if (isLastChunk && float32Array.length > 0) {
+              const fadeSamples = Math.min(64, Math.floor(float32Array.length / 4)); // ~1.3ms at 24kHz
+              for (let j = float32Array.length - fadeSamples; j < float32Array.length; j++) {
+                const fadeProgress = (j - (float32Array.length - fadeSamples)) / fadeSamples;
+                float32Array[j] *= 1 - fadeProgress;
+              }
+            }
+            
             const audioBuffer = await WavEncoder.encode({
               sampleRate: chunk.audio.sampleRate,
-              channelData: [new Float32Array(decodedData.buffer)],
+              channelData: [float32Array],
             });
 
             const effectiveInteractionId = currentGraphInteractionId || v4();
