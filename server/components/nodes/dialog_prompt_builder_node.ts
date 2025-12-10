@@ -28,9 +28,20 @@ export class DialogPromptBuilderNode extends CustomNode {
       content: msg.content,
     }));
 
-    // Add knowledge records and memory context as system messages if they exist
+    // Build messages array in the correct order:
+    // 1. Primary system prompt (from state.messages)
+    // 2. Knowledge system message (if available)
+    // 3. Memory system message (if available)
+    // 4. Rest of conversation messages (user/assistant)
     const messages: Array<{ role: string; content: string }> = [];
     
+    // Find and add the primary system prompt first (it should be the first message)
+    const primarySystemMessage = conversationMessages.find((msg) => msg.role === 'system');
+    if (primarySystemMessage) {
+      messages.push(primarySystemMessage);
+    }
+
+    // Add knowledge records as a system message if they exist
     if (knowledgeRecords && knowledgeRecords.records && knowledgeRecords.records.length > 0) {
       console.log(`DialogPromptBuilderNode: Fetched ${knowledgeRecords.records.length} knowledge record(s):`);
       knowledgeRecords.records.forEach((record, index) => {
@@ -56,8 +67,11 @@ export class DialogPromptBuilderNode extends CustomNode {
       });
     }
 
-    // Add conversation messages
-    messages.push(...conversationMessages);
+    // Add remaining conversation messages (excluding the primary system message we already added)
+    const remainingMessages = conversationMessages.filter((msg) => 
+      !(msg.role === 'system' && msg === primarySystemMessage)
+    );
+    messages.push(...remainingMessages);
 
     return new GraphTypes.LLMChatRequest({
       messages,
