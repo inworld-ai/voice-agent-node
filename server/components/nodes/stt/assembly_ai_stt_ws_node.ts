@@ -62,7 +62,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
   private readonly MAX_TRANSCRIPTION_DURATION_MS = 40000; // 40s
   private readonly SILENCE_CHUNK_DURATION_MS = 100; // Duration of each silence chunk
   private readonly SILENCE_CHUNK_INTERVAL_MS = 50; // Interval between chunks (half of SILENCE_CHUNK_DURATION_MS)
-  private readonly MIN_SILENCE_INJECTION_DURATION_MS = 600; // Minimum total silence injection duration (0.6s)
+  private readonly MIN_SILENCE_INJECTION_DURATION_MS = 1300; // Minimum total silence injection duration (1.3s) IMPORTANT: This should match your max silence duration config for assembly
 
   // Per-session WebSocket connections
   private readonly INACTIVITY_TIMEOUT_MS = 60000; // 60s
@@ -703,13 +703,13 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         audioProcessingPromise.then(() => ''), // Return empty string if stream ends without turn
       ]);
 
-      // // Ensure audio processing is stopped
-      // shouldStopProcessing = true;
+      // Ensure audio processing is stopped
+      shouldStopProcessing = true;
 
-      // // Wait a bit for the audio processing to finish cleanup
-      // await audioProcessingPromise.catch(() => {
-      //   // Ignore errors during cleanup
-      // });
+      // Wait a bit for the audio processing to finish cleanup
+      await audioProcessingPromise.catch(() => {
+        // Ignore errors during cleanup
+      });
 
       // Return DataStreamWithMetadata with transcript in metadata
       console.log(
