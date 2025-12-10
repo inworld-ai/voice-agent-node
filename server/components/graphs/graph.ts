@@ -283,14 +283,17 @@ function createSafetySubgraph(
 
 export class InworldGraphWrapper {
   graph: Graph;
-
   private constructor({ graph }: { graph: Graph }) {
     this.graph = graph;
   }
 
   async destroy() {
-    if(this.graph) {
-      await this.graph.stop();
+    if (this.graph) {
+      try {
+        await this.graph.stop();
+      } catch (error) {
+        console.error('Error stopping graph:', error);
+      }
     }
   }
 

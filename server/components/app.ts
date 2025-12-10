@@ -223,7 +223,7 @@ export class InworldApp {
     return agent.systemPrompt.replace('{userName}', userName);
   }
 
-  unload(req: any, res: any) {
+  async unload(req: any, res: any) {
     res.setHeader('Content-Type', 'application/json');
 
     const errors = validationResult(req);
@@ -246,10 +246,10 @@ export class InworldApp {
 
     // Destroy session graphs
     if (connection.graphWithTextInput) {
-      connection.graphWithTextInput.destroy();
+      await connection.graphWithTextInput.destroy();
     }
     if (connection.graphWithAudioInput) {
-      connection.graphWithAudioInput.destroy();
+      await connection.graphWithAudioInput.destroy();
     }
 
     // Remove connection
@@ -258,14 +258,14 @@ export class InworldApp {
     res.end(JSON.stringify({ message: 'Session unloaded' }));
   }
 
-  shutdown() {
+  async shutdown() {
     // Destroy all session graphs
     for (const [sessionId, connection] of Object.entries(this.connections)) {
       if (connection.graphWithTextInput) {
-        connection.graphWithTextInput.destroy();
+        await connection.graphWithTextInput.destroy();
       }
       if (connection.graphWithAudioInput) {
-        connection.graphWithAudioInput.destroy();
+        await connection.graphWithAudioInput.destroy();
       }
     }
     this.connections = {};
