@@ -240,10 +240,10 @@ function createSafetySubgraph(
     ],
     classifierConfig: {
       classes: [
-        { label: 'hategroup', threshold: 0.75 },
-        { label: 'selfharm', threshold: 0.7 },
+        { label: 'hategroup', threshold: 0.8 },
+        { label: 'selfharm', threshold: 0.8 },
         { label: 'sexual', threshold: 0.8 },
-        { label: 'sexualminors', threshold: 0.7 },
+        { label: 'sexualminors', threshold: 0.9 },
         { label: 'substance', threshold: 0.6 },
       ],
     },

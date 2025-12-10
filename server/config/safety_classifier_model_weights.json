@@ -3,7 +3,7 @@
   "classes": {
     "hategroup": {
       "intercept": -0.6336858220437651,
-      "default_threshold": 0.75,
+      "default_threshold": 0.9,
       "weights": {
         "1002": 0.6083133881264625,
         "148": 2.4982917450854947,
@@ -29,7 +29,7 @@
     },
     "selfharm": {
       "intercept": -0.34282212745902,
-      "default_threshold": 0.7,
+      "default_threshold": 0.9,
       "weights": {
         "111": 5.406742643336453,
         "123": -17.795078289134658,
@@ -180,7 +180,7 @@
     },
     "sexualminors": {
       "intercept": -1.3572299854997385,
-      "default_threshold": 0.7,
+      "default_threshold": 0.97,
       "weights": {
         "1000": -9.690930375223006,
         "101": -0.2503212549333778,
@@ -233,7 +233,7 @@
     },
     "substance": {
       "intercept": -0.06716528993148292,
-      "default_threshold": 0.1,
+      "default_threshold": 0.8,
       "weights": {
         "242": -21.637557355626182,
         "32": 4.356295924211193,

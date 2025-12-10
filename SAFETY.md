@@ -58,7 +58,7 @@ classifierConfig: {
     { label: 'hategroup', threshold: 0.75 },
     { label: 'selfharm', threshold: 0.7 },
     { label: 'sexual', threshold: 0.8 },
-    { label: 'sexualminors', threshold: 0.7 },
+    { label: 'sexualminors', threshold: 0.97 },
     { label: 'substance', threshold: 0.6 },
   ],
 },
