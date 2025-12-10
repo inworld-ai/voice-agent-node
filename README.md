@@ -85,7 +85,7 @@ The client will start on port 3000 and should automatically open in your default
 1. Define the agent settings:
    - Enter the agent system prompt or select one of the predefined character presets
    - Optionally add knowledge entries in the "Knowledge" tab to provide domain-specific information
-   - Optionally select a voice in the "Voice" tab (each character preset comes with a default voice, but you can change it)
+   - Optionally select a new voice in the "Voice" tab
    - Click "Create Agent"
 
 2. Interact with the agent:
