@@ -48,21 +48,28 @@ By default the following safety classifiers are provided:
 - **Sexual topics** (`sexual`): Content involving sexual acts, explicit behavior, or adult themes.
 - **Substance use** (`substance`): Content related to drugs, tobacco, and other controlled substances.
 
-You can modify the `default_threshold` in `server/config/safety_classifier_model_weights.json` to tune how strict the classifier is for each topic, depending on what works best for your use case. 
+## Configuring Safety Classifier Thresholds
+
+Safety classifier thresholds can be configured in `server/components/graphs/graph.ts` (around lines 230-251) in the `TextClassifierNode` configuration. The `classifierConfig` property allows you to set custom thresholds for each safety category:
+
+```typescript
+classifierConfig: {
+  classes: [
+    { label: 'hategroup', threshold: 0.75 },
+    { label: 'selfharm', threshold: 0.7 },
+    { label: 'sexual', threshold: 0.8 },
+    { label: 'sexualminors', threshold: 0.7 },
+    { label: 'substance', threshold: 0.6 },
+  ],
+},
+```
+
+**Note:** Lower thresholds mean the classifier is more sensitive (will trigger more often).
+
+The `default_threshold` values in `server/config/safety_classifier_model_weights.json` are only used if `classifierConfig` is not provided. When `classifierConfig` is specified, those thresholds override the defaults. 
 
 ## How Safety Works
 
 - **Input Safety**: User messages are checked before being sent to the LLM. In this template, unsafe inputs trigger a canned response (see `inputSafetyCannedPhrases` in `server/components/graph.ts`) instead of processing, but the template can be modified to trigger other actions.
 - **Output Safety**: AI-generated responses are checked before being sent to TTS. In this template, unsafe outputs trigger a canned response (see `outputSafetyCannedPhrases` in `server/components/graph.ts`) instead of being spoken, but the template can be modified to trigger other actions.
 - **Keyword Normalization**: Keywords are normalized (lowercase, punctuation removed) before matching to catch variations and obfuscations.
-
-## Testing Safety
-
-You can test the keyword matcher directly using:
-
-```bash
-cd server
-yarn node-keyword-matcher "Your text to check" --keywordsPath="config/profanity.json"
-```
-
-This will output whether the text is safe or unsafe, and if unsafe, which keywords were matched.
