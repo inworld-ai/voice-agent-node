@@ -59,9 +59,13 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
   private language: string;
   private keytermsPrompt: string[];
   private wsEndpointBaseUrl: string = 'wss://streaming.assemblyai.com/v3/ws';
+  private readonly MAX_TRANSCRIPTION_DURATION_MS = 40000; // 40s
+  private readonly SILENCE_CHUNK_DURATION_MS = 100; // Duration of each silence chunk
+  private readonly SILENCE_CHUNK_INTERVAL_MS = 50; // Interval between chunks (half of SILENCE_CHUNK_DURATION_MS)
+  private readonly MIN_SILENCE_INJECTION_DURATION_MS = 600; // Minimum total silence injection duration (0.6s)
 
   // Per-session WebSocket connections
-  private readonly INACTIVITY_TIMEOUT_MS = 60 * 1000 * 10; // 10 minutes
+  private readonly INACTIVITY_TIMEOUT_MS = 60000; // 60s
   private sessions: Map<
     string,
     {
@@ -411,6 +415,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
     let errorMessage = '';
     let shouldStopProcessing = false;
     let endpointingLatency = 0;
+    let maxDurationReached = false;
 
     // Promise to capture the turn result
     let turnResolve: (value: string) => void;
@@ -500,10 +505,17 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
 
       // Process audio chunks and send to Assembly.AI
       const audioProcessingPromise = (async () => {
+        let maxDurationTimeout: NodeJS.Timeout | null = null;
         try {
           console.log(
             `[AssemblyAI WS STT - Iteration ${iteration}] Starting audio processing loop`,
           );
+
+          // Safety timer: prevent infinite loops if no turn is detected
+          maxDurationTimeout = setTimeout(() => {
+            maxDurationReached = true; // Ensure maximum process() execution length doesn't exceed 40. If the player with an active mic does not speak for 60s, the node executor will error out thinking it's a zombie node
+            // We'll loop back in the graph and continue after timing out
+          }, this.MAX_TRANSCRIPTION_DURATION_MS);
 
           while (true) {
             // Check if session was closed externally (e.g., due to inactivity)
@@ -512,6 +524,13 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
                 `[AssemblyAI WS STT - Iteration ${iteration}] Session closed externally - stopping audio processing`,
               );
               break;
+            }
+
+            if (maxDurationReached) {
+              if (!transcriptText) {
+                console.warn( `AssemblyAI max transcription duration reached [limit:${this.MAX_TRANSCRIPTION_DURATION_MS}ms]`);
+                break;
+              }
             }
 
             const result: {
@@ -524,6 +543,64 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
               console.log(
                 `[AssemblyAI WS STT - Iteration ${iteration}] Audio stream exhausted after ${audioChunkCount} chunks`,
               );
+              
+              // Inject silence chunks when client explicitly ends audio input
+              // Calculate max chunks to ensure at least 0.6s total duration
+              const maxSilenceChunks = Math.ceil(
+                this.MIN_SILENCE_INJECTION_DURATION_MS /
+                  this.SILENCE_CHUNK_INTERVAL_MS,
+              );
+              const silenceSamplesPerChunk = Math.floor(
+                (this.SILENCE_CHUNK_DURATION_MS / 1000) * this.sampleRate,
+              );
+              
+              console.log(
+                `[AssemblyAI WS STT - Iteration ${iteration}] Injecting silence chunks: ${maxSilenceChunks} chunks of ${this.SILENCE_CHUNK_DURATION_MS}ms each, every ${this.SILENCE_CHUNK_INTERVAL_MS}ms (total: ${maxSilenceChunks * this.SILENCE_CHUNK_INTERVAL_MS}ms)`,
+              );
+              
+              for (let i = 0; i < maxSilenceChunks; i++) {
+                // Check if session was closed externally
+                if (session.shouldStopProcessing) {
+                  console.log(
+                    `[AssemblyAI WS STT - Iteration ${iteration}] Session closed during silence injection - stopping`,
+                  );
+                  break;
+                }
+                
+                // Create silence chunk (zeros)
+                const silenceData = new Float32Array(silenceSamplesPerChunk).fill(0);
+                const pcm16Silence = this.convertToPCM16(silenceData);
+                
+                // Send silence chunk to Assembly.AI WebSocket
+                try {
+                  if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+                    session.ws.send(Buffer.from(pcm16Silence.buffer));
+                  } else {
+                    console.warn(
+                      `[AssemblyAI WS STT - Iteration ${iteration}] WebSocket not open during silence injection, stopping`,
+                    );
+                    break;
+                  }
+                } catch (sendError) {
+                  console.error(
+                    `[AssemblyAI WS STT - Iteration ${iteration}] Error sending silence chunk:`,
+                    sendError,
+                  );
+                  break;
+                }
+                
+                // Wait before sending next chunk (except for the last chunk)
+                if (i < maxSilenceChunks - 1) {
+                  await new Promise((resolve) =>
+                    setTimeout(resolve, this.SILENCE_CHUNK_INTERVAL_MS),
+                  );
+                }
+              }
+              
+              console.log(
+                `[AssemblyAI WS STT - Iteration ${iteration}] Finished injecting silence chunks`,
+              );
+              
               isStreamExhausted = true;
               break;
             }
@@ -606,6 +683,10 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
           errorMessage = error instanceof Error ? error.message : String(error);
           throw error;
         } finally {
+          // Audio processing loop exit. Remove Timeout
+          if (maxDurationTimeout) {
+            clearTimeout(maxDurationTimeout);
+          }
           // Remove the temporary message handler
           console.log(
             `[AssemblyAI WS STT - Iteration ${iteration}] Cleaning up message handler`,
