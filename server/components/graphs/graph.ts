@@ -289,7 +289,9 @@ export class InworldGraphWrapper {
   }
 
   async destroy() {
-    await this.graph.stop();
+    if(this.graph) {
+      await this.graph.stop();
+    }
   }
 
   static async create(props: CreateGraphPropsInterface) {
