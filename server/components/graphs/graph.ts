@@ -458,7 +458,7 @@ export class InworldGraphWrapper {
       {
         promptTemplate: flashTemplate,
         maxHistoryToProcess:
-          parseInt(process.env.FLASH_MEMORY_INTERVAL || '2', 10),
+          parseInt(process.env.FLASH_MEMORY_INTERVAL || '4', 10),
         embedder: memoryEmbedder,
         llmProvider: memoryLLMProvider,
         llmModelName: memoryLLMModel,
@@ -470,7 +470,7 @@ export class InworldGraphWrapper {
       {
         promptTemplate: longTermTemplate,
         maxHistoryToProcess:
-          parseInt(process.env.LONG_TERM_MEMORY_INTERVAL || '4', 10),
+          parseInt(process.env.LONG_TERM_MEMORY_INTERVAL || '10', 10),
         embedder: memoryEmbedder,
         llmComponentId: memoryLLMComponentId,
         llmProvider: memoryLLMProvider,
@@ -501,9 +501,9 @@ export class InworldGraphWrapper {
 
     // Create memory update node
     const memoryUpdateNode = new MemoryUpdateNode({
-      flashInterval: parseInt(process.env.FLASH_MEMORY_INTERVAL || '2', 10),
+      flashInterval: parseInt(process.env.FLASH_MEMORY_INTERVAL || '4', 10),
       longTermInterval: parseInt(
-        process.env.LONG_TERM_MEMORY_INTERVAL || '4',
+        process.env.LONG_TERM_MEMORY_INTERVAL || '10',
         10,
       ),
       connections,
