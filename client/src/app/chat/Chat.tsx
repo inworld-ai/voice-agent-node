@@ -29,6 +29,7 @@ interface ChatProps {
   onStopRecordingRef?: React.MutableRefObject<(() => void) | undefined>;
   onStopAudio?: () => void;
   isLoaded: boolean;
+  isClosing?: boolean;
 }
 
 let interval: number;
@@ -37,7 +38,7 @@ let audioCtx: AudioContext;
 let audioWorkletNode: AudioWorkletNode;
 
 export function Chat(props: ChatProps) {
-  const { chatHistory, connection, latencyData, onStopRecordingRef, onStopAudio, isLoaded } = props;
+  const { chatHistory, connection, latencyData, onStopRecordingRef, onStopAudio, isLoaded, isClosing } = props;
 
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -239,30 +240,70 @@ export function Chat(props: ChatProps) {
             backgroundColor: 'transparent',
           }}
         >
-          <Button
-            startIcon={<ArrowBackRounded />}
-            onClick={props.onStopChatting}
-            variant="outlined"
-            size="small"
+          {isLoaded && !isClosing && (
+            <Button
+              startIcon={<ArrowBackRounded />}
+              onClick={props.onStopChatting}
+              variant="outlined"
+              size="small"
+              sx={{
+                borderColor: '#E9E5E0',
+                color: '#5C5652',
+                fontFamily: 'Inter, Arial, sans-serif',
+                fontSize: '14px',
+                fontWeight: 500,
+                textTransform: 'none',
+                borderRadius: '8px',
+                px: 2,
+                py: 1,
+                '&:hover': {
+                  borderColor: '#D6D1CB',
+                  backgroundColor: '#f4f0eb',
+                },
+              }}
+            >
+              Back to settings
+            </Button>
+          )}
+        </Box>
+
+        {/* Loading overlay when closing connection */}
+        {isClosing && (
+          <Box
             sx={{
-              borderColor: '#E9E5E0',
-              color: '#5C5652',
-              fontFamily: 'Inter, Arial, sans-serif',
-              fontSize: '14px',
-              fontWeight: 500,
-              textTransform: 'none',
-              borderRadius: '8px',
-              px: 2,
-              py: 1,
-              '&:hover': {
-                borderColor: '#D6D1CB',
-                backgroundColor: '#f4f0eb',
-              },
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(250, 247, 245, 0.95)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 1000,
+              backdropFilter: 'blur(4px)',
             }}
           >
-            Back to settings
-          </Button>
-        </Box>
+            <CircularProgress
+              size={48}
+              sx={{
+                color: '#5C5652',
+                mb: 2,
+              }}
+            />
+            <Typography
+              sx={{
+                color: '#5C5652',
+                fontFamily: 'Inter, Arial, sans-serif',
+                fontSize: '16px',
+                fontWeight: 500,
+              }}
+            >
+              Disconnecting...
+            </Typography>
+          </Box>
+        )}
 
         {/* Chat History */}
         <Box

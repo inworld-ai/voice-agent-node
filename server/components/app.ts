@@ -468,8 +468,31 @@ export class InworldApp {
   }
 
   async shutdown() {
-    // Destroy all session graphs
+    // Destroy all session graphs and clean up resources
     for (const [sessionId, connection] of Object.entries(this.connections)) {
+      // Clean up audio stream manager first (same as when record button is pressed)
+      if (connection.audioStreamManager) {
+        console.log(
+          `[Session ${sessionId}] Ending audio stream during shutdown`,
+        );
+        connection.audioStreamManager.end();
+
+        // Wait for the graph execution to complete (same as audioSessionEnd handler)
+        if (connection.currentAudioGraphExecution) {
+          try {
+            await connection.currentAudioGraphExecution;
+          } catch (error) {
+            console.error(
+              `[Session ${sessionId}] Error waiting for audio graph execution:`,
+              error,
+            );
+          }
+        }
+        connection.audioStreamManager = undefined;
+        connection.currentAudioGraphExecution = undefined;
+      }
+
+      // Destroy graphs after audio stream is closed
       if (connection.graphWithTextInput) {
         await connection.graphWithTextInput.destroy();
       }
