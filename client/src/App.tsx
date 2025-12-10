@@ -537,6 +537,7 @@ function App() {
       userName={userName}
       latencyData={latencyData}
       onStopRecordingRef={stopRecordingRef}
+      onStopAudio={() => player.stop()}
       isLoaded={open && !!agent}
     />
   ) : (

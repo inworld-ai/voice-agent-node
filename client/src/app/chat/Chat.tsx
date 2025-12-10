@@ -27,6 +27,7 @@ interface ChatProps {
   userName: string;
   latencyData: InteractionLatency[];
   onStopRecordingRef?: React.MutableRefObject<(() => void) | undefined>;
+  onStopAudio?: () => void;
   isLoaded: boolean;
 }
 
@@ -36,7 +37,7 @@ let audioCtx: AudioContext;
 let audioWorkletNode: AudioWorkletNode;
 
 export function Chat(props: ChatProps) {
-  const { chatHistory, connection, latencyData, onStopRecordingRef, isLoaded } = props;
+  const { chatHistory, connection, latencyData, onStopRecordingRef, onStopAudio, isLoaded } = props;
 
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -146,6 +147,12 @@ export function Chat(props: ChatProps) {
     );
 
     if (trimmedText && trimmedText.length > 0) {
+      // Stop any currently playing audio when sending a new text message
+      if (onStopAudio) {
+        console.log('🛑 Stopping audio playback due to new text message');
+        onStopAudio();
+      }
+      
       console.log('✅ Sending text message:', JSON.stringify(trimmedText));
       connection.send(JSON.stringify({ type: 'text', text: trimmedText }));
       setText('');
@@ -153,7 +160,7 @@ export function Chat(props: ChatProps) {
     } else {
       console.log('❌ Blocked empty message - not sending');
     }
-  }, [connection, text, isLoaded]);
+  }, [connection, text, isLoaded, onStopAudio]);
 
   const handleTextKeyPress = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
