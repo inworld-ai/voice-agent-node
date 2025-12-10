@@ -47,7 +47,8 @@ export class DialogPromptBuilderNode extends CustomNode {
 
     // Add memory context if available
     if (memoryContext && memoryContext.relevantMemories && memoryContext.relevantMemories.length > 0) {
-      console.log(`DialogPromptBuilderNode: Using ${memoryContext.relevantMemories.length} relevant memory(ies)`);
+      const count = memoryContext.relevantMemories.length;
+      console.log(`DialogPromptBuilderNode: Using ${count} relevant ${count === 1 ? 'memory' : 'memories'}`);
       const memoryContextText = `Here is what you remember about the user based on the current conversation topic:\n\n${memoryContext.relevantMemories.map((m, index) => `${index + 1}. ${m}`).join('\n')}\n\nUse this context naturally in your responses. Do not explicitly mention "your memories" or "records" - just use the information as if you recall it.`;
       messages.push({
         role: 'system',

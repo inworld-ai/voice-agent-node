@@ -1,16 +1,17 @@
 import { CustomNode, ProcessContext } from '@inworld/runtime/graph';
+import { TextEmbedder } from '@inworld/runtime/primitives/embedder';
 import { MemoryRecord } from '../memory_types';
 
 export interface LongTermResponseParserConfig {
-  embedderComponentId: string;
+  embedder: TextEmbedder;
 }
 
 export class LongTermResponseParserNode extends CustomNode {
-  private embedderComponentId: string;
+  private embedder: TextEmbedder;
 
   constructor(config: LongTermResponseParserConfig) {
     super();
-    this.embedderComponentId = config.embedderComponentId;
+    this.embedder = config.embedder;
   }
 
   async process(
@@ -34,15 +35,23 @@ export class LongTermResponseParserNode extends CustomNode {
       },
     ];
 
-    // Embed new records
+    // Embed new records using shared embedder
     if (newRecords.length > 0) {
-      const embedder = context.getEmbedderInterface(this.embedderComponentId);
-      const texts = newRecords.map((r) => r.text);
-      const embeddings = await embedder.embedBatch(texts);
+      try {
+        const texts = newRecords.map((r) => r.text);
+        const embeddings = await this.embedder.embedBatch(texts);
 
-      newRecords.forEach((r, i) => {
-        r.embedding = Array.from(embeddings[i]);
-      });
+        newRecords.forEach((r, i) => {
+          r.embedding = Array.from(embeddings[i]);
+        });
+      } catch (error: any) {
+        // If embedding fails, return no records
+        console.warn(
+          `[Long Term Memory] Failed to generate embeddings: ${error.message || error}. ` +
+          `Skipping memory storage for this turn.`,
+        );
+        return { newLongTermMemory: [] };
+      }
     }
 
     if (newRecords.length > 0) {

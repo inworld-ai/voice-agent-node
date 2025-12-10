@@ -3,6 +3,7 @@ import {
   RemoteLLMChatNode,
   RemoteLLMComponent,
 } from '@inworld/runtime/graph';
+import { TextEmbedder } from '@inworld/runtime/primitives/embedder';
 import { FlashPromptBuilderNode } from '../nodes/memory/flash/flash_prompt_builder';
 import { FlashResponseParserNode } from '../nodes/memory/flash/flash_response_parser';
 import { FlashMemoryConfig } from '../nodes/memory/memory_types';
@@ -10,7 +11,7 @@ import { FlashMemoryConfig } from '../nodes/memory/memory_types';
 export interface FlashSubgraphConfig extends FlashMemoryConfig {
   llmProvider: string;
   llmModelName: string;
-  embedderComponentId: string;
+  embedder: TextEmbedder;
 }
 
 export function createFlashSubgraph(

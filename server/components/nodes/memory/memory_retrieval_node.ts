@@ -1,4 +1,5 @@
 import { CustomNode, ProcessContext } from '@inworld/runtime/graph';
+import { TextEmbedder } from '@inworld/runtime/primitives/embedder';
 import { MemorySnapshot } from './memory_types';
 import { ConnectionsMap } from '../../../types';
 import { getDefaultMemoryStore } from '../../memory_store';
@@ -10,7 +11,7 @@ interface EmbeddedRecord {
 }
 
 export interface MemoryRetrievalConfig {
-  embedderComponentId: string;
+  embedder: TextEmbedder;
   similarityThreshold: number;
   maxContextItems: number;
   connections: ConnectionsMap;
@@ -78,15 +79,21 @@ export class MemoryRetrievalNode extends CustomNode {
       return { relevantMemories: [] };
     }
 
-    // Use the embedder to embed the query
-    const embedder = context.getEmbedderInterface(
-      this.config.embedderComponentId,
-    );
-    const queryEmbedding = await embedder.embed(text);
-
-    // Cosine similarity logic
-    const queryVector = Array.from(queryEmbedding || []);
-    if (!queryVector.length) {
+    // Use the shared embedder to embed the query
+    let queryVector: number[];
+    try {
+      const queryEmbedding = await this.config.embedder.embed(text);
+      queryVector = Array.from(queryEmbedding || []);
+      if (!queryVector.length) {
+        console.warn('[Memory Retrieval] Empty embedding vector received');
+        return { relevantMemories: [] };
+      }
+    } catch (error: any) {
+      // Log error and return empty - can't do similarity search without embeddings
+      console.warn(
+        `[Memory Retrieval] Failed to generate query embedding: ${error.message || error}. ` +
+        `Skipping memory retrieval for this query.`,
+      );
       return { relevantMemories: [] };
     }
 

@@ -1,4 +1,5 @@
 import { SubgraphBuilder, RemoteLLMChatNode } from '@inworld/runtime/graph';
+import { TextEmbedder } from '@inworld/runtime/primitives/embedder';
 import { LongTermPromptBuilderNode } from '../nodes/memory/long_term/long_term_prompt_builder';
 import { LongTermResponseParserNode } from '../nodes/memory/long_term/long_term_response_parser';
 import { LongTermMemoryConfig } from '../nodes/memory/memory_types';
@@ -6,7 +7,7 @@ import { LongTermMemoryConfig } from '../nodes/memory/memory_types';
 export function createLongTermSubgraph(
   id: string,
   config: LongTermMemoryConfig & {
-    embedderComponentId: string;
+    embedder: TextEmbedder;
     llmComponentId: string;
     llmProvider: string;
     llmModelName: string;
@@ -22,7 +23,7 @@ export function createLongTermSubgraph(
   });
 
   const responseParser = new LongTermResponseParserNode({
-    embedderComponentId: config.embedderComponentId,
+    embedder: config.embedder,
   });
 
   return new SubgraphBuilder(id)

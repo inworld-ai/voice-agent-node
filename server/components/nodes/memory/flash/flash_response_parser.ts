@@ -1,4 +1,5 @@
 import { CustomNode, ProcessContext } from '@inworld/runtime/graph';
+import { TextEmbedder } from '@inworld/runtime/primitives/embedder';
 import { FlashMemoryConfig, MemoryRecord } from '../memory_types';
 
 function cosineSimilarity(a: number[], b: number[]): number {
@@ -19,7 +20,7 @@ const FACT_TOPIC_REGEX =
   /Fact:\s*([\s\S]*?)\s*\.?\s*Topic:\s*(.*?)(?=\s-\sFact:|\n|$)/gi;
 
 export interface FlashResponseParserConfig extends FlashMemoryConfig {
-  embedderComponentId: string;
+  embedder: TextEmbedder;
 }
 
 export class FlashResponseParserNode extends CustomNode {
@@ -46,19 +47,26 @@ export class FlashResponseParserNode extends CustomNode {
     const parsed = this.parseOutput(content);
     if (parsed.length === 0) return { memoryRecords: [] };
 
-    // Embed
-    const embedder = context.getEmbedderInterface(
-      this.config.embedderComponentId,
-    );
-    const texts = parsed.map((p) => p.text);
-    const embeddings = await embedder.embedBatch(texts);
+    // Embed using shared embedder
+    let records: MemoryRecord[];
+    try {
+      const texts = parsed.map((p) => p.text);
+      const embeddings = await this.config.embedder.embedBatch(texts);
 
-    const records: MemoryRecord[] = parsed.map((p, i) => ({
-      text: p.text,
-      embedding: Array.from(embeddings[i]),
-      topics: p.topics,
-      createdAt: Date.now(),
-    }));
+      records = parsed.map((p, i) => ({
+        text: p.text,
+        embedding: Array.from(embeddings[i]),
+        topics: p.topics,
+        createdAt: Date.now(),
+      }));
+    } catch (error: any) {
+      // If embedding fails, return no records
+      console.warn(
+        `[Flash Memory] Failed to generate embeddings: ${error.message || error}. ` +
+        `Skipping memory storage for this turn.`,
+      );
+      return { memoryRecords: [] };
+    }
 
     // Deduplicate
     const filtered = this.filterBySimilarity(records);
@@ -93,11 +101,37 @@ export class FlashResponseParserNode extends CustomNode {
     const records: Array<{ text: string; topics: string[] }> = [];
     const normalized = output.replace(/\s+/g, ' ').trim();
 
+    // First, try to extract JSON from the output
+    // Remove markdown code blocks and any prefix text
+    let cleanOutput = output
+      .replace(/```json|```/g, '') // Remove markdown code blocks
+      .replace(/^[^[{]*/, '') // Remove any text before first [ or {
+      .replace(/[^}\]]*$/, '') // Remove any text after last } or ]
+      .trim();
+    
+    // Try to fix common JSON issues: unquoted string values
+    // Look for patterns like "memory": text without quotes (can span multiple lines)
+    // Match until we find a comma followed by } or ], or just } or ]
+    cleanOutput = cleanOutput.replace(
+      /"memory"\s*:\s*([\s\S]+?)(?=\s*[,}\]])/g,
+      (match, value) => {
+        // Quote the value if it's not already quoted
+        const trimmed = value.trim();
+        if (trimmed.length > 0 && !trimmed.startsWith('"') && !trimmed.startsWith("'")) {
+          // Escape any quotes and newlines in the value
+          const escaped = trimmed.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n');
+          return `"memory": "${escaped}"`;
+        }
+        return match;
+      }
+    );
+    
     try {
-      const cleanOutput = output.replace(/```json|```/g, '').trim();
       const jsonOutput = JSON.parse(cleanOutput);
       const items = Array.isArray(jsonOutput) ? jsonOutput : [jsonOutput];
+      
       for (const item of items) {
+        // Only accept memories marked as important
         if (item.important && item.memory && item.memory.length > 0) {
           records.push({
             text: item.memory,
@@ -105,19 +139,61 @@ export class FlashResponseParserNode extends CustomNode {
           });
         }
       }
+      
       return records;
-    } catch (e) {
-      // Regex fallback
+    } catch (e: any) {
+      // Try to extract JSON objects/arrays manually using regex
+      // Look for JSON-like structures: { "important": ..., "topic": ..., "memory": ... }
+      const jsonObjectRegex = /\{\s*"important"\s*:\s*(true|false)\s*,\s*"topic"\s*:\s*"([^"]*)"\s*,\s*"memory"\s*:\s*"([^"]*)"\s*\}/g;
+      // For unquoted memory values, match until we see a comma followed by } or ], or just } or ]
+      // This handles multi-line and punctuation in the memory text
+      // Use [\s\S] instead of . to match newlines
+      const jsonObjectRegexUnquoted = /\{\s*"important"\s*:\s*(true|false)\s*,\s*"topic"\s*:\s*"([^"]*)"\s*,\s*"memory"\s*:\s*([\s\S]+?)(?=\s*[,}\]])/g;
+      
       let match;
-      FACT_TOPIC_REGEX.lastIndex = 0;
-      while (
-        (match = FACT_TOPIC_REGEX.exec(normalized)) !== null &&
-        records.length < (this.config.maxFlashMemory || 4)
-      ) {
-        records.push({
-          text: match[1].trim(),
-          topics: [match[2].trim()],
-        });
+      
+      // Try quoted memory values first
+      jsonObjectRegex.lastIndex = 0;
+      while ((match = jsonObjectRegex.exec(cleanOutput)) !== null) {
+        const important = match[1] === 'true';
+        const memory = match[3].trim();
+        // Only accept memories marked as important
+        if (important && memory.length > 0) {
+          records.push({
+            text: memory,
+            topics: match[2] && match[2] !== 'n/a' ? [match[2]] : [],
+          });
+        }
+      }
+      
+      // If no matches, try unquoted memory values
+      if (records.length === 0) {
+        jsonObjectRegexUnquoted.lastIndex = 0;
+        while ((match = jsonObjectRegexUnquoted.exec(cleanOutput)) !== null) {
+          const important = match[1] === 'true';
+          const memory = match[3].trim();
+          // Only accept memories marked as important
+          if (important && memory.length > 0) {
+            records.push({
+              text: memory,
+              topics: match[2] && match[2] !== 'n/a' ? [match[2]] : [],
+            });
+          }
+        }
+      }
+      
+      // If still no matches, try the original regex fallback
+      if (records.length === 0) {
+        FACT_TOPIC_REGEX.lastIndex = 0;
+        while (
+          (match = FACT_TOPIC_REGEX.exec(normalized)) !== null &&
+          records.length < (this.config.maxFlashMemory || 4)
+        ) {
+          records.push({
+            text: match[1].trim(),
+            topics: [match[2].trim()],
+          });
+        }
       }
     }
     return records;
@@ -132,7 +208,7 @@ export class FlashResponseParserNode extends CustomNode {
       for (let j = i + 1; j < records.length; j++) {
         if (
           cosineSimilarity(records[i].embedding, records[j].embedding) >=
-          (this.config.similarityThreshold || 0.9)
+          (this.config.similarityThreshold || 0.85)
         ) {
           shouldInclude = false;
           break;

@@ -15,6 +15,7 @@ import {
   TextChunkingNode,
   TextClassifierNode,
 } from '@inworld/runtime/graph';
+import { TextEmbedder, TextEmbedderFactory } from '@inworld/runtime/primitives/embedder';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
@@ -283,11 +284,21 @@ function createSafetySubgraph(
 
 export class InworldGraphWrapper {
   graph: Graph;
-  private constructor({ graph }: { graph: Graph }) {
+  private memoryEmbedder?: TextEmbedder;
+  
+  private constructor({ graph, memoryEmbedder }: { graph: Graph; memoryEmbedder?: TextEmbedder }) {
     this.graph = graph;
+    this.memoryEmbedder = memoryEmbedder;
   }
 
   async destroy() {
+    if (this.memoryEmbedder) {
+      try {
+        this.memoryEmbedder.destroy();
+      } catch (error) {
+        console.error('Error destroying memory embedder:', error);
+      }
+    }
     if (this.graph) {
       try {
         await this.graph.stop();
@@ -417,18 +428,20 @@ export class InworldGraphWrapper {
     const longTermTemplate = fs.readFileSync(LONG_TERM_TEMPLATE_PATH, 'utf-8');
 
     // Memory configuration
-    const memoryEmbedderComponentId = `memory_embedder_component${postfix}`;
     const memoryLLMComponentId = `memory_llm_component${postfix}`;
     const memoryLLMProvider =
       process.env.MEMORY_LLM_PROVIDER || llmProvider;
     const memoryLLMModel =
       process.env.MEMORY_LLM_MODEL || llmModelName;
 
-    // Create memory embedder component
-    const memoryEmbedderComponent = new RemoteEmbedderComponent({
-      id: memoryEmbedderComponentId,
-      provider: 'inworld',
-      modelName: 'BAAI/bge-large-en-v1.5',
+    // Create shared memory embedder instance (using primitive, not component)
+    const memoryEmbedder = await TextEmbedderFactory.createTextEmbedder({
+      type: 'remote',
+      config: {
+        provider: 'inworld',
+        modelName: 'BAAI/bge-large-en-v1.5',
+        apiKey: apiKey,
+      },
     });
 
     // Create memory LLM component
@@ -446,7 +459,7 @@ export class InworldGraphWrapper {
         promptTemplate: flashTemplate,
         maxHistoryToProcess:
           parseInt(process.env.FLASH_MEMORY_INTERVAL || '2', 10),
-        embedderComponentId: memoryEmbedderComponentId,
+        embedder: memoryEmbedder,
         llmProvider: memoryLLMProvider,
         llmModelName: memoryLLMModel,
       },
@@ -457,8 +470,8 @@ export class InworldGraphWrapper {
       {
         promptTemplate: longTermTemplate,
         maxHistoryToProcess:
-          parseInt(process.env.LONG_TERM_MEMORY_INTERVAL || '10', 10),
-        embedderComponentId: memoryEmbedderComponentId,
+          parseInt(process.env.LONG_TERM_MEMORY_INTERVAL || '4', 10),
+        embedder: memoryEmbedder,
         llmComponentId: memoryLLMComponentId,
         llmProvider: memoryLLMProvider,
         llmModelName: memoryLLMModel,
@@ -475,7 +488,7 @@ export class InworldGraphWrapper {
 
     // Create memory retrieval node
     const memoryRetrievalNode = new MemoryRetrievalNode({
-      embedderComponentId: memoryEmbedderComponentId,
+      embedder: memoryEmbedder,
       similarityThreshold: parseFloat(
         process.env.MEMORY_SIMILARITY_THRESHOLD || '0.3',
       ),
@@ -490,7 +503,7 @@ export class InworldGraphWrapper {
     const memoryUpdateNode = new MemoryUpdateNode({
       flashInterval: parseInt(process.env.FLASH_MEMORY_INTERVAL || '2', 10),
       longTermInterval: parseInt(
-        process.env.LONG_TERM_MEMORY_INTERVAL || '10',
+        process.env.LONG_TERM_MEMORY_INTERVAL || '4',
         10,
       ),
       connections,
@@ -527,7 +540,6 @@ export class InworldGraphWrapper {
     graphBuilder
       .addComponent(inputSafetySubgraph.textEmbedderComponent)
       .addComponent(outputSafetySubgraph.textEmbedderComponent)
-      .addComponent(memoryEmbedderComponent)
       .addComponent(memoryLLMComponent)
       .addSubgraph(inputSafetySubgraph.subgraph)
       .addSubgraph(outputSafetySubgraph.subgraph)
@@ -798,6 +810,7 @@ export class InworldGraphWrapper {
 
     return new InworldGraphWrapper({
       graph,
+      memoryEmbedder,
     });
   }
 }
