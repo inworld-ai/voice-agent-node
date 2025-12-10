@@ -71,6 +71,7 @@ function App() {
   const [agent, setAgent] = useState<Agent>();
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const [chatting, setChatting] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
   const [userName, setUserName] = useState('');
   const [latencyData, setLatencyData] = useState<InteractionLatency[]>([]);
 
@@ -473,9 +474,12 @@ function App() {
   }, [formMethods, onDisconnect, onMessage, onOpen]);
 
   const stopChatting = useCallback(async () => {
-    // Disable flags
-    setChatting(false);
-    setOpen(false);
+    // Set closing state to show loading indicator
+    setIsClosing(true);
+
+    // Store the current key and connection before clearing
+    const currentKey = key;
+    const currentConnection = connection;
 
     // Stop audio playing
     player.stop();
@@ -484,23 +488,59 @@ function App() {
     setChatHistory([]);
     setLatencyData([]);
 
-    // Close connection and clear connection data
-    if (connection) {
-      connection.close();
-      connection.removeEventListener('open', onOpen);
-      connection.removeEventListener('message', onMessage);
-      connection.removeEventListener('disconnect', onDisconnect);
-      // Note: error and close handlers are removed automatically when connection closes
+    // Close connection and wait for it to fully close
+    if (currentConnection) {
+      // Remove event listeners before closing
+      currentConnection.removeEventListener('open', onOpen);
+      currentConnection.removeEventListener('message', onMessage);
+      currentConnection.removeEventListener('disconnect', onDisconnect);
+      
+      // Close the connection and wait for it to close
+      if (currentConnection.readyState === WebSocket.OPEN || currentConnection.readyState === WebSocket.CONNECTING) {
+        currentConnection.close();
+        
+        // Wait for the connection to fully close
+        await new Promise<void>((resolve) => {
+          if (currentConnection.readyState === WebSocket.CLOSED) {
+            resolve();
+          } else {
+            const timeout = setTimeout(() => {
+              console.warn('WebSocket close timeout, proceeding anyway');
+              resolve();
+            }, 2000); // 2 second timeout
+            
+            currentConnection.addEventListener('close', () => {
+              clearTimeout(timeout);
+              resolve();
+            }, { once: true });
+          }
+        });
+      }
     }
 
+    // Unload session on server
+    if (currentKey) {
+      try {
+        await fetch(`${config.UNLOAD_URL}?sessionId=${currentKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+        });
+      } catch (error) {
+        console.error('Error unloading session:', error);
+        // Continue even if unload fails
+      }
+    }
+
+    // Clear state only after connection is fully closed
     setConnection(undefined);
     setAgent(undefined);
-
-    await fetch(`${config.UNLOAD_URL}?sessionId=${key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
     key = '';
+    
+    // Disable flags last, after everything is cleaned up
+    // This ensures the settings page only shows after connection is closed
+    setChatting(false);
+    setOpen(false);
+    setIsClosing(false);
   }, [connection, onDisconnect, onMessage, onOpen]);
 
   const resetForm = useCallback(() => {
@@ -539,6 +579,7 @@ function App() {
       onStopRecordingRef={stopRecordingRef}
       onStopAudio={() => player.stop()}
       isLoaded={open && !!agent}
+      isClosing={isClosing}
     />
   ) : (
     <ConfigView
