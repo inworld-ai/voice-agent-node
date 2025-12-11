@@ -1,3 +1,5 @@
+import { TTS_SAMPLE_RATE } from '../../../../constants';
+
 interface Audio {
   chunk: string;
 }
@@ -96,7 +98,20 @@ export class Player {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer);
+      // Convert bytes to Float32Array (PCM Float32 samples)
+      const float32Samples = new Float32Array(bytes.buffer);
+      const numChannels = 1;
+      const numSamples = float32Samples.length;
+
+      // Create AudioBuffer directly from Float32Array samples
+      const audioBuffer = this.audioContext.createBuffer(
+        numChannels,
+        numSamples,
+        TTS_SAMPLE_RATE,
+      );
+
+      const channelData = audioBuffer.getChannelData(0);
+      channelData.set(float32Samples);
 
       const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
@@ -108,7 +123,10 @@ export class Player {
 
       // Calculate timing for gapless playback
       const currentTime = this.audioContext.currentTime;
-      const startTime = Math.max(currentTime, this.nextStartTime);
+      const startTime = Math.max(
+        currentTime,
+        this.nextStartTime > 0 ? this.nextStartTime : currentTime,
+      );
 
       // Apply fade-in at the start
       fadeGain.gain.setValueAtTime(0, startTime);
