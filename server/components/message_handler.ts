@@ -10,8 +10,6 @@ import { AudioStreamManager } from './audio_stream_manager';
 import { EventFactory } from './event_factory';
 import { InworldGraphWrapper } from './graph';
 
-const WavEncoder = require('wav-encoder');
-
 export class MessageHandler {
   private INPUT_SAMPLE_RATE = INPUT_SAMPLE_RATE;
   private currentInteractionId: string = v4();
@@ -310,11 +308,40 @@ export class MessageHandler {
       await result.processResponse({
         TTSOutputStream: async (ttsStream: GraphTypes.TTSOutputStream) => {
           for await (const chunk of ttsStream) {
-            const decodedData = Buffer.from(chunk.audio?.data, 'base64');
-            const audioBuffer = await WavEncoder.encode({
-              sampleRate: chunk.audio.sampleRate,
-              channelData: [new Float32Array(decodedData.buffer)],
-            });
+            // Validate audio data exists
+            if (!chunk.audio?.data) {
+              console.warn(
+                `[Session ${sessionId}] Skipping chunk with missing audio data`,
+              );
+              continue;
+            }
+
+            let audioBuffer: Buffer;
+
+            if (Array.isArray(chunk.audio.data)) {
+              // The array contains byte values from a Buffer, not float values
+              // Interpret these bytes as Float32 data (4 bytes per float)
+              audioBuffer = Buffer.from(chunk.audio.data);
+            } else if (typeof chunk.audio.data === 'string') {
+              // If it's a base64 string (legacy format)
+              audioBuffer = Buffer.from(chunk.audio.data, 'base64');
+            } else if (Buffer.isBuffer(chunk.audio.data)) {
+              // If it's already a Buffer
+              audioBuffer = chunk.audio.data;
+            } else {
+              console.error(
+                `[Session ${sessionId}] Unsupported audio data type:`,
+                typeof chunk.audio.data,
+              );
+              continue;
+            }
+
+            if (audioBuffer.byteLength === 0) {
+              console.warn(
+                `[Session ${sessionId}] Skipping chunk with zero-length audio buffer`,
+              );
+              continue;
+            }
 
             const effectiveInteractionId = currentGraphInteractionId || v4();
             const textPacket = EventFactory.text(
@@ -328,7 +355,7 @@ export class MessageHandler {
 
             this.send(
               EventFactory.audio(
-                Buffer.from(audioBuffer).toString('base64'),
+                audioBuffer.toString('base64'),
                 effectiveInteractionId,
                 textPacket.packetId.utteranceId,
               ),
