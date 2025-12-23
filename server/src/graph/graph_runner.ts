@@ -147,7 +147,7 @@ export class GraphRunner {
           }
         }
 
-        // Speech complete notifier from AssemblyAI graph path
+        // Speech complete notifier (optional)
         if (customData.type === 'SPEECH_COMPLETE') {
           const effectiveInteractionId =
             (customData as any).interactionId ||

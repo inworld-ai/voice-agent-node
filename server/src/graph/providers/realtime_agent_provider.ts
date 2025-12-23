@@ -27,14 +27,11 @@ import type {
 
 const DEFAULT_VAD_COMPONENT_ID = 'local_vad';
 const DEFAULT_TURN_DETECTOR_COMPONENT_ID = 'local_turn_detector';
-const DEFAULT_INWORLD_STT_COMPONENT_ID = 'inworld_stt';
-const DEFAULT_GROQ_STT_COMPONENT_ID = 'groq_stt';
 const DEFAULT_LLM_COMPONENT_ID = 'inworld_llm';
 
 const DEFAULT_AGENT_PROMPT_SUB_KEY = 'AGENT_PROMPT';
 const DEFAULT_VAD_MODEL_PATH_SUB_KEY = 'VAD_MODEL_PATH';
 const DEFAULT_TURN_DETECTOR_MODEL_PATH_SUB_KEY = 'TURN_DETECTOR_MODEL_PATH';
-const DEFAULT_GROQ_API_KEY_SUB_KEY = 'GROQ_API_KEY';
 
 /**
  * Provides per-session realtime agent graphs assembled from SDK graph primitives.
@@ -48,7 +45,6 @@ export class RealtimeAgentProvider implements GraphProvider {
       voiceId: string;
       vadModelPath?: string;
       turnDetectorModelPath?: string;
-      groqApiKey?: string;
     },
   ) {}
 
@@ -66,19 +62,12 @@ export class RealtimeAgentProvider implements GraphProvider {
       agentPrompt: systemPrompt + promptTemplate,
       vadModelPath: this.defaults.vadModelPath,
       turnDetectorModelPath: this.defaults.turnDetectorModelPath,
-      groqApiKey: this.defaults.groqApiKey,
     });
-
-    const sttComponentId =
-      substitutions[DEFAULT_GROQ_API_KEY_SUB_KEY] !== undefined
-        ? DEFAULT_GROQ_STT_COMPONENT_ID
-        : DEFAULT_INWORLD_STT_COMPONENT_ID;
 
     const graph = buildRealtimeVoiceAgentGraph({
       graphId: `voice-agent-native-${session.sessionId}`,
       apiKey: this.apiKey,
       substitutions,
-      sttComponentId,
       voiceId: this.defaults.voiceId,
       voiceLanguageCode: 'en-US',
       interruptionEventOutputTemplate:
@@ -119,10 +108,6 @@ function buildVoiceAgentSubstitutions(
     substitutions[DEFAULT_TURN_DETECTOR_MODEL_PATH_SUB_KEY] =
       opts.turnDetectorModelPath;
   }
-  if (opts.groqApiKey) {
-    substitutions[DEFAULT_GROQ_API_KEY_SUB_KEY] = opts.groqApiKey;
-  }
-
   return substitutions;
 }
 
@@ -130,7 +115,6 @@ interface BuildVoiceAgentGraphOptions {
   graphId: string;
   apiKey: string;
   substitutions: Record<string, string>;
-  sttComponentId: string;
   voiceId: string;
   voiceLanguageCode: string;
   interruptionEventOutputTemplate: string;
@@ -162,16 +146,8 @@ function buildRealtimeVoiceAgentGraph(
       }),
     );
 
-  const groqSttComponent = new RemoteSTTComponent({
-    id: DEFAULT_GROQ_STT_COMPONENT_ID,
-    service: 'groq',
-    modelId: 'whisper-large-v3',
-    sttConfig: {
-      languageCode: 'en-US',
-    },
-  });
-  const inworldSttComponent = new RemoteSTTComponent({
-    id: DEFAULT_INWORLD_STT_COMPONENT_ID,
+  const sttComponent = new RemoteSTTComponent({
+    id: 'inworld_stt',
     service: 'inworld',
     modelId: 'groq/whisper-large-v3',
     sttConfig: {
@@ -179,7 +155,7 @@ function buildRealtimeVoiceAgentGraph(
     },
   });
 
-  builder.addComponent(groqSttComponent).addComponent(inworldSttComponent);
+  builder.addComponent(sttComponent);
 
   const llmComponent = new RemoteLLMComponent({
     id: DEFAULT_LLM_COMPONENT_ID,
@@ -232,11 +208,6 @@ function buildRealtimeVoiceAgentGraph(
     },
   });
   builder.addNode(textExtractorNode);
-
-  const sttComponent =
-    opts.sttComponentId === DEFAULT_GROQ_STT_COMPONENT_ID
-      ? groqSttComponent
-      : inworldSttComponent;
 
   const sttNode = new RemoteSTTNode({
     id: 'stt_node',

@@ -26,7 +26,9 @@ export class SessionService {
     const agent = { ...body.agent, id: v4() };
     const systemMessageId = v4();
 
-    const sttService: STTService = body.sttService ?? 'assemblyai';
+    // NOTE: AssemblyAI support was removed. We keep the `sttService` field in the
+    // request contract for backwards compatibility, but it no longer affects behavior.
+    const sttService: STTService = 'native';
 
     const session: Session = {
       sessionId,

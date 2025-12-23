@@ -1,6 +1,6 @@
 import type { Graph } from '@inworld/runtime/graph';
 
-export type GraphKind = 'realtime' | 'assemblyai';
+export type GraphKind = 'realtime';
 
 export interface GraphProviderResult {
   graph: Graph;
@@ -9,7 +9,7 @@ export interface GraphProviderResult {
 
 export interface GraphProviderSession {
   sessionId: string;
-  sttService: 'native' | 'assemblyai';
+  sttService: 'native';
   state: any;
 }
 
