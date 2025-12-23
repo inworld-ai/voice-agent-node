@@ -1,11 +1,19 @@
 {
   "compilerOptions": {
-    "declaration": true,
+    "declaration": false,
     "module": "Node16",
     "moduleResolution": "node16",
     "noImplicitAny": true,
     "resolveJsonModule": true,
-    "target": "es6",
-    "types": ["node"]
+    "target": "es2020",
+    "types": ["node"],
+    "baseUrl": ".",
+    "paths": {
+      // NOTE: `paths` is TypeScript-only. `ts-node`/Node won't resolve it unless
+      // you use `tsconfig-paths/register`. We use relative imports instead.
+    }
   },
+  "include": ["src", "../contract"]
 }
+
+

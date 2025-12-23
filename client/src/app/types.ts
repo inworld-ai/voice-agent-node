@@ -1,4 +1,4 @@
-export type STTService = 'assemblyai';
+export type STTService = 'assemblyai' | 'native';
 
 // Voice type definition used by the voice selector
 export type Voice = {

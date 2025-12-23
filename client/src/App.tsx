@@ -22,6 +22,7 @@ import {
 } from './app/types';
 import { config } from './config';
 import * as defaults from './defaults';
+import {configuration} from "./defaults";
 
 interface CurrentContext {
   agent?: Agent;
@@ -367,7 +368,7 @@ function App() {
         userName: user?.name,
         agent,
         voiceId,
-        sttService: 'assemblyai', // Always use Assembly.AI (only supported STT service)
+        sttService: configuration.sttService,
       }),
     });
     const data = await response.json();
