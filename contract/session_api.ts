@@ -4,7 +4,7 @@
  * @remarks
  * Matches current client UI values.
  */
-export type STTService = 'assemblyai' | 'native';
+export type STTService = 'native';
 
 /**
  * Minimal agent configuration sent from the client to the server.
