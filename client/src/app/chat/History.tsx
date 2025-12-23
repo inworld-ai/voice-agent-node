@@ -142,19 +142,59 @@ export const History = (props: HistoryProps) => {
       (item) => item.type === CHAT_HISTORY_TYPE.ACTOR && item.source?.isUser === true
     );
     
+    // Helper: find the last index of an item in `history` for a given interactionId + actor role.
+    // We use this as a fallback when the server doesn't keep `interactionId` consistent between
+    // user and agent packets (otherwise typing indicators can get "stuck").
+    const lastIndexOfUserByInteractionId = new Map<string, number>();
+    for (let i = 0; i < history.length; i++) {
+      const item = history[i];
+      if (
+        item.type === CHAT_HISTORY_TYPE.ACTOR &&
+        item.source?.isUser === true &&
+        item.interactionId
+      ) {
+        lastIndexOfUserByInteractionId.set(item.interactionId, i);
+      }
+    }
+
+    const hasAnyAgentMessageAfterIndex = (idx: number): boolean => {
+      for (let i = idx + 1; i < history.length; i++) {
+        const item = history[i] as any;
+        if (
+          item?.type === CHAT_HISTORY_TYPE.ACTOR &&
+          item?.source?.isAgent === true
+        ) {
+          return true;
+        }
+      }
+      return false;
+    };
+
     // Find the most recent user message that doesn't have an agent response
     let pendingUserInteractionId: string | undefined;
     for (let i = userMessages.length - 1; i >= 0; i--) {
       const userMsg = userMessages[i];
-      const hasAgentResponse = mergedRecords.some(
-        (item) => 
-          item.interactionId === userMsg.interactionId && 
+      const interactionId = userMsg.interactionId;
+      if (!interactionId) continue;
+
+      // Consider ANY agent message (partial/final, even empty text) as a response starting.
+      // This fixes audio-only responses where `TEXT.text` may be empty, and also avoids
+      // rendering a separate "typing" bubble next to streaming text.
+      const hasAgentResponseStarted = mergedRecords.some(
+        (item) =>
+          item.interactionId === interactionId &&
           item.source.isAgent &&
-          item.messages.some((m) => !m.isRecognizing && m.text && m.text.trim().length > 0)
+          item.messages.length > 0,
       );
+
+      // Fallback: if we have any agent message after this user message in the raw history,
+      // treat it as a response (even if interactionId mismatches).
+      const lastUserIdx = lastIndexOfUserByInteractionId.get(interactionId);
+      const hasAnyAgentAfter =
+        lastUserIdx !== undefined ? hasAnyAgentMessageAfterIndex(lastUserIdx) : false;
       
-      if (!hasAgentResponse) {
-        pendingUserInteractionId = userMsg.interactionId;
+      if (!hasAgentResponseStarted && !hasAnyAgentAfter) {
+        pendingUserInteractionId = interactionId;
         break;
       }
     }
