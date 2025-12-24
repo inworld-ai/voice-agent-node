@@ -149,9 +149,10 @@ server.listen(WS_APP_PORT, async () => {
 });
 
 ['SIGINT', 'SIGTERM', 'exit'].forEach(
-    (signal) => {
-        process.on(signal, async () => {
-            await stopInworldRuntime();
-        });
-    },
+  (signal) => {
+      process.on(signal, async () => {
+          await stopInworldRuntime();
+          server.close(() => process.exit(0));
+      });
+  },
 );

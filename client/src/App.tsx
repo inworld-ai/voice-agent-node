@@ -234,6 +234,10 @@ function App() {
       // Only filter empty messages from USER (not from AGENT)
       // isAgent is true for agent messages, undefined/false for user messages
       if (trimmedText.length > 0 || isAgent === true) {
+        // Stop audio playback when user text arrives (user interrupted agent)
+        if (!isAgent) {
+          player.stop();
+        }
         console.log('✅ Adding text message to chat');
         
         // Format audio transcripts for user messages (ensure proper sentence structure)
@@ -459,6 +463,9 @@ function App() {
   }, [formMethods, onDisconnect, onMessage, onOpen]);
 
   const stopChatting = useCallback(async () => {
+    // Stop recording if active
+    stopRecordingRef.current?.();
+
     // Disable flags
     setChatting(false);
     setOpen(false);
@@ -470,13 +477,13 @@ function App() {
     setChatHistory([]);
     setLatencyData([]);
 
-    // Close connection and clear connection data
+    // Send audioSessionEnd and close connection
     if (connection) {
+      connection.send(JSON.stringify({ type: 'audioSessionEnd' }));
       connection.close();
       connection.removeEventListener('open', onOpen);
       connection.removeEventListener('message', onMessage);
       connection.removeEventListener('disconnect', onDisconnect);
-      // Note: error and close handlers are removed automatically when connection closes
     }
 
     setConnection(undefined);

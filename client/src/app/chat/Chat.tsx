@@ -53,10 +53,7 @@ export function Chat(props: ChatProps) {
     clearInterval(interval);
     stream?.getTracks().forEach((track) => track.stop());
     audioWorkletNode?.disconnect();
-    if (connection) {
-      connection.send(JSON.stringify({ type: 'audioSessionEnd' }));
-    }
-  }, [connection]);
+  }, []);
 
   // Expose stopRecording to parent via ref
   useEffect(() => {
