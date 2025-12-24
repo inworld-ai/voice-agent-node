@@ -11,7 +11,6 @@ This application demonstrates a simple chat interface with an AI agent that can 
 ## Prerequisites
 
 - Node.js 20 or higher
-- Assembly.AI API key (required for speech-to-text functionality)
 - Inworld API key (required)
 
 ## Get Started
@@ -25,7 +24,7 @@ cd voice-agent-node
 
 ### Step 2: Configure Server Environment Variables
 
-Copy `server/.env-sample` to `server/.env` and fill all required variables. Some variables are optional and can be left empty. In this case default values will be used.
+Copy `server/env.example` to `server/.env` and fill all required variables. Some variables are optional and can be left empty. In this case default values will be used.
 
 Get your API key from the [Inworld Portal](https://platform.inworld.ai/).
 
@@ -67,101 +66,144 @@ The client will start on port 3000 and should automatically open in your default
 
 1. Define the agent settings:
    - Enter the agent system prompt
-   - Select an Speech to Text service
    - Click "Create Agent"
 
 2. Interact with the agent:
    - For voice input, click the microphone icon to unmute yourself. Click again to mute yourself.
    - For text input, enter text in the input field and press Enter to send it to the agent
-  
+
 ## Repo Structure
 
 ```
 voice-agent-node/
 ├── server/                       # Backend handling Inworld's LLM, STT, and TTS services
-│   ├── components/
-│   │   ├── graph.ts              # Main graph-based pipeline orchestration
-│   │   ├── stt_graph.ts          # Speech-to-text graph configuration
-│   │   ├── message_handler.ts    # WebSocket message handling
-│   │   ├── audio_handler.ts      # Audio stream processing
-│   │   └── nodes/                # Graph node implementations (STT, LLM, TTS processing)
+│   ├── src/
+│   │   ├── index.ts              # Server entry point with Express and WebSocket setup
+│   │   ├── graph/
+│   │   │   ├── graph_provider.ts # Graph provider interface definitions
+│   │   │   ├── graph_runner.ts   # Graph execution and output handling
+│   │   │   └── providers/
+│   │   │       └── realtime_agent_provider.ts  # Realtime voice agent graph builder
+│   │   ├── session/
+│   │   │   ├── session_service.ts  # Session lifecycle management
+│   │   │   └── session_store.ts    # In-memory session storage
+│   │   └── stream/
+│   │       └── multimodal_stream.ts  # Audio/text stream management
 │   ├── models/
-│   │   └── silero_vad.onnx       # VAD model for voice activity detection
-│   ├── index.ts                  # Server entry point
+│   │   ├── silero_vad/
+│   │   │   └── silero_vad_v6.0.onnx  # Voice Activity Detection model
+│   │   └── pipecat_smart_turn/
+│   │       └── smart-turn-v3.0.onnx  # Turn detection model
+│   ├── env.example               # Environment variables template
 │   ├── package.json
 │   └── tsconfig.json
 ├── client/                       # Frontend React application
 │   ├── src/
-│   │   ├── app/                  # UI components (chat, configuration, shared components)
+│   │   ├── app/
+│   │   │   ├── chat/             # Chat UI components
+│   │   │   ├── components/       # Shared layout components
+│   │   │   ├── configuration/    # Agent configuration UI
+│   │   │   ├── helpers/          # Utility functions
+│   │   │   └── sound/            # Audio playback handling
 │   │   ├── App.tsx
 │   │   └── index.tsx
 │   ├── public/
+│   │   └── audio-processor.worklet.js  # Web Audio worklet for mic input
 │   ├── package.json
 │   └── vite.config.mts
-├── constants.ts
+├── contract/                     # Shared types for client-server communication
+│   ├── index.ts
+│   ├── session_api.ts
+│   ├── ws_inbound.ts
+│   └── ws_outbound.ts
+├── constants.ts                  # Shared audio and model configuration
 └── LICENSE
 ```
 
 ## Architecture
 
-The voice agent server uses Inworld's Graph Framework with two main processing pipelines:
+The voice agent server uses Inworld's Graph Framework to build a realtime voice agent pipeline with local VAD, remote STT/LLM/TTS processing.
 
 ### Pipeline Overview
 
 ```mermaid
 flowchart TB
-    subgraph AUDIO["AUDIO INPUT PIPELINE"]
-        AudioInput[AudioInput]
+    subgraph INPUT["INPUT PROCESSING"]
+        InputProxy[InputProxy]
+        InputSlicer[InputSlicer<br/>VAD + Turn Detection]
+        AudioExtractor[AudioExtractor]
+        TextExtractor[TextExtractor]
         
-        subgraph OPT1["Assembly.AI STT Pipeline"]
-            AssemblyAI[AssemblyAI STT]
-            TranscriptExtractor[TranscriptExtractor]
-            SpeechNotif1[SpeechCompleteNotifier<br/>terminal node]
-            
-            AssemblyAI -->|interaction_complete| TranscriptExtractor
-            AssemblyAI -->|interaction_complete| SpeechNotif1
-            AssemblyAI -->|stream_exhausted=false<br/>loop| AssemblyAI
-        end
-        
-        AudioInput --> OPT1
-        
-        TranscriptExtractor --> InteractionQueue
+        InputProxy --> InputSlicer
+        InputSlicer -->|loop| InputSlicer
+        InputSlicer -->|audio| AudioExtractor
+        InputSlicer -->|text| TextExtractor
     end
-    
-    subgraph TEXT["TEXT PROCESSING & TTS PIPELINE"]
-        TextInput[TextInput]
-        DialogPrompt[DialogPromptBuilder]
-        LLM[LLM]
-        TextChunk[TextChunking]
-        TextAgg[TextAggregator]
-        TTS[TTS<br/>end]
-        StateUpdate[StateUpdate]
-        
-        TextInput --> DialogPrompt
-        DialogPrompt --> LLM
-        LLM --> TextChunk
-        LLM --> TextAgg
-        TextChunk --> TTS
-        TextAgg --> StateUpdate
-        StateUpdate -.->|loop optional| InteractionQueue
-    end
-    
-    InteractionQueue -->|text.length>0| TextInput
 
-    style SpeechNotif1 fill:#f9f,stroke:#333,stroke-width:2px,color:#000
-    style TTS fill:#9f9,stroke:#333,stroke-width:2px,color:#000
+    subgraph STT["SPEECH-TO-TEXT"]
+        STTNode[RemoteSTT<br/>Groq Whisper]
+        AudioExtractor --> STTNode
+    end
+
+    subgraph QUEUE["INTERACTION QUEUE"]
+        InteractionInfo[InteractionInfo]
+        InteractionQueue[InteractionQueue]
+        
+        STTNode --> InteractionInfo
+        TextExtractor --> InteractionInfo
+        InteractionInfo --> InteractionQueue
+    end
+
+    subgraph LLM["TEXT GENERATION"]
+        PromptVariables[PromptVariables]
+        LLMNode[RemoteLLM<br/>Groq Llama 3.3]
+        TextChunking[TextChunking]
+        
+        InteractionQueue --> PromptVariables
+        PromptVariables --> LLMNode
+        LLMNode --> TextChunking
+    end
+
+    subgraph TTS["TEXT-TO-SPEECH"]
+        TTSNode[RemoteTTS<br/>Inworld TTS]
+        TTSFirstChunk[TTSFirstChunkCheck]
+        
+        TextChunking --> TTSNode
+        TTSNode --> TTSFirstChunk
+    end
+
+    subgraph STATE["STATE MANAGEMENT"]
+        StateUpdater[StateUpdater]
+        
+        TextChunking --> StateUpdater
+        TTSFirstChunk --> StateUpdater
+        StateUpdater -.->|loop| InteractionQueue
+    end
+
+    subgraph INTERRUPTION["INTERRUPTION"]
+        InterruptionEvent[InterruptionEvent<br/>→ client]
+        InputSlicer -->|interruption| InterruptionEvent
+    end
+
+    style TTSNode fill:#9f9,stroke:#333,stroke-width:2px,color:#000
+    style InterruptionEvent fill:#f9f,stroke:#333,stroke-width:2px,color:#000
 ```
 
-### STT Provider
+### Key Components
 
-The server uses **Assembly.AI** as the Speech-to-Text provider, which provides high accuracy with built-in speech segmentation.
+| Component | Description |
+|-----------|-------------|
+| **Local VAD** | Silero VAD v6.0 for voice activity detection |
+| **Turn Detector** | Pipecat Smart Turn v3.0 for detecting speech turn boundaries |
+| **STT** | Inworld Remote STT with Groq Whisper Large v3 |
+| **LLM** | Groq Llama 3.3 70B Versatile |
+| **TTS** | Inworld TTS with configurable voice |
 
 ## Troubleshooting
 
 - If you encounter connection issues, ensure both server and client are running. Server should be running on port 4000 and client can be running on port 3000 or any other port.
 - Check that your API keys are valid and properly set in the `.env` file:
-  - `INWORLD_API_KEY` - Required for Inworld services
-  - `ASSEMBLY_AI_API_KEY` - Required for speech-to-text functionality
+  - `INWORLD_API_KEY` - Required for Inworld services (STT, LLM, TTS)
 - For voice input issues, ensure your browser has microphone permissions.
 
 **Bug Reports**: [GitHub Issues](https://github.com/inworld-ai/voice-agent-node/issues)

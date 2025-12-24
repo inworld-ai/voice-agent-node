@@ -1,8 +1,8 @@
-import { GraphTypes } from '@inworld/runtime/graph';
-import { v4 } from 'uuid';
+import { GraphTypes } from "@inworld/runtime/graph";
+import { v4 } from "uuid";
 
-import type { WSOutboundPacket } from '../../../contract';
-import { MultimodalStream } from '../stream/multimodal_stream';
+import type { WSOutboundPacket } from "../../../contract";
+import { MultimodalStream } from "../stream/multimodal_stream";
 
 export interface GraphRunnerContext {
   sessionId: string;
@@ -31,21 +31,18 @@ export class GraphRunner {
   }) {
     const multimodalStream = stream.createStream();
     const taggedStream = Object.assign(multimodalStream, {
-      type: 'MultimodalContent',
+      type: "MultimodalContent",
     });
 
-    const { outputStream } = await (graphWrapper.graph as any).start(
-      taggedStream,
-      {
-        dataStoreContent: {
-          sessionId: ctx.sessionId,
-          state: ctx.state,
-        },
-        userCredentials: {
-          inworld_api_key: ctx.userApiKey,
-        },
+    const { outputStream } = await graphWrapper.graph.start(taggedStream, {
+      dataStoreContent: {
+        sessionId: ctx.sessionId,
+        state: ctx.state,
       },
-    );
+      userCredentials: {
+        inworld_api_key: ctx.userApiKey,
+      },
+    });
 
     let currentInteractionId: string = v4();
 
@@ -53,13 +50,13 @@ export class GraphRunner {
       if (result?.isGraphError?.()) {
         const errorData = result.data;
         const errorObj = new Error(
-          errorData?.message || 'Graph processing error',
+          errorData?.message || "Graph processing error"
         );
         this.send({
-          type: 'ERROR',
+          type: "ERROR",
           error: errorObj.toString(),
           date: new Date(),
-          packetId: { interactionId: currentInteractionId },
+          packetId: { interactionId: currentInteractionId, utteranceId: v4() },
         });
         currentInteractionId = v4();
         continue;
@@ -68,12 +65,12 @@ export class GraphRunner {
       const resolvedInteractionId = await this.processResult(
         result,
         currentInteractionId,
-        ctx,
+        ctx
       );
 
       if (resolvedInteractionId) {
         this.send({
-          type: 'INTERACTION_END',
+          type: "INTERACTION_END",
           date: new Date(),
           packetId: { interactionId: resolvedInteractionId },
         });
@@ -86,7 +83,7 @@ export class GraphRunner {
   private async processResult(
     result: any,
     interactionId: string,
-    ctx: GraphRunnerContext,
+    ctx: GraphRunnerContext
   ): Promise<string> {
     await result.processResponse({
       TTSOutputStream: async (ttsStream: GraphTypes.TTSOutputStream) => {
@@ -99,15 +96,15 @@ export class GraphRunner {
             : undefined;
           if (audioBytes) {
             this.send({
-              type: 'AUDIO',
-              audio: { chunk: audioBytes.toString('base64') },
+              type: "AUDIO",
+              audio: { chunk: audioBytes.toString("base64") },
               date: new Date(),
               packetId: { interactionId: effectiveInteractionId, utteranceId },
               routing: { source: this.buildAgentRoutingSource(ctx) },
             });
           }
           this.send({
-            type: 'TEXT',
+            type: "TEXT",
             text: { text: chunk.text, final: true },
             date: new Date(),
             packetId: { interactionId: effectiveInteractionId, utteranceId },
@@ -117,7 +114,7 @@ export class GraphRunner {
       },
       Custom: async (customData: GraphTypes.Custom<any>) => {
         // InteractionInfo from realtime agent native graph
-        if (customData.type === 'InteractionInfo') {
+        if (customData.type === "InteractionInfo") {
           const interactionData = (customData as any).data || customData;
           const text = interactionData.text;
           const interactionIdFromData =
@@ -129,7 +126,7 @@ export class GraphRunner {
 
           if (interactionData.isInterrupted) {
             this.send({
-              type: 'CANCEL_RESPONSE',
+              type: "CANCEL_RESPONSE",
               date: new Date(),
               packetId: { interactionId: effectiveInteractionId },
             });
@@ -138,7 +135,7 @@ export class GraphRunner {
           if (text) {
             interactionId = effectiveInteractionId;
             this.send({
-              type: 'TEXT',
+              type: "TEXT",
               text: { text, final: false },
               date: new Date(),
               packetId: { interactionId, utteranceId: v4() },
@@ -148,19 +145,19 @@ export class GraphRunner {
         }
 
         // Speech complete notifier (optional)
-        if (customData.type === 'SPEECH_COMPLETE') {
+        if (customData.type === "SPEECH_COMPLETE") {
           const effectiveInteractionId =
             (customData as any).interactionId ||
             String((customData as any).iteration);
           this.send({
-            type: 'USER_SPEECH_COMPLETE',
+            type: "USER_SPEECH_COMPLETE",
             date: new Date(),
             packetId: { interactionId: effectiveInteractionId },
             metadata: {
               totalSamples: (customData as any).totalSamples,
               sampleRate: (customData as any).sampleRate,
               endpointingLatencyMs: (customData as any).endpointingLatencyMs,
-              source: 'VAD',
+              source: "VAD",
               iteration: (customData as any).iteration,
             },
           });
@@ -168,7 +165,7 @@ export class GraphRunner {
       },
       error: async (error: GraphTypes.GraphError) => {
         this.send({
-          type: 'ERROR',
+          type: "ERROR",
           error: new Error(error.message).toString(),
           date: new Date(),
           packetId: { interactionId: interactionId || v4() },
@@ -183,12 +180,12 @@ export class GraphRunner {
   private getAgentName(ctx: GraphRunnerContext): string {
     const agentName =
       ctx.state?.agent?.name?.trim() || ctx.state?.agent?.id?.trim();
-    return agentName || 'Assistant';
+    return agentName || "Assistant";
   }
 
   private getUserName(ctx: GraphRunnerContext): string {
     const userName = ctx.state?.userName?.trim();
-    return userName || 'User';
+    return userName || "User";
   }
 
   private buildAgentRoutingSource(ctx: GraphRunnerContext) {

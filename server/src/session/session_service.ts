@@ -1,15 +1,15 @@
-import { v4 } from 'uuid';
-import type { WebSocket } from 'ws';
+import { v4 } from "uuid";
+import type { WebSocket } from "ws";
 
 import type {
   LoadRequestBody,
   STTService,
   WSOutboundPacket,
-} from '../../../contract';
-import type { GraphProvider } from '../graph/graph_provider';
-import { GraphRunner } from '../graph/graph_runner';
-import { MultimodalStream } from '../stream/multimodal_stream';
-import { type Session, SessionStore } from './session_store';
+} from "../../../contract";
+import type { GraphProvider } from "../graph/graph_provider";
+import { GraphRunner } from "../graph/graph_runner";
+import { MultimodalStream } from "../stream/multimodal_stream";
+import { type Session, SessionStore } from "./session_store";
 
 export class SessionService {
   constructor(
@@ -17,15 +17,15 @@ export class SessionService {
     private readonly graphProvider: GraphProvider,
     private readonly sendToWs: (
       ws: WebSocket,
-      packet: WSOutboundPacket,
+      packet: WSOutboundPacket
     ) => void,
-    private readonly inworldApiKey: string,
+    private readonly inworldApiKey: string
   ) {}
 
   createSession(sessionId: string, body: LoadRequestBody): Session {
     const agent = { ...body.agent, id: v4() };
     const systemMessageId = v4();
-    const sttService: STTService = 'native';
+    const sttService: STTService = "native";
 
     const session: Session = {
       sessionId,
@@ -34,12 +34,12 @@ export class SessionService {
         interactionId: systemMessageId,
         messages: [
           {
-            role: 'system',
-            content: (body.agent?.systemPrompt || '').replace(
-              '{userName}',
-              body.userName,
+            role: "system",
+            content: (body.agent?.systemPrompt || "").replace(
+              "{userName}",
+              body.userName
             ),
-            id: 'system' + systemMessageId,
+            id: "system" + systemMessageId,
           },
         ],
         agent,
@@ -68,7 +68,14 @@ export class SessionService {
     if (!session) return;
     session.unloaded = true;
     session.stream?.end();
-    if (session.execution) await session.execution.catch((): void => undefined);
+    if (session.execution) {
+      await session.execution.catch((err) => {
+        console.warn(
+          `[SessionService] execution cleanup error for ${sessionId}:`,
+          err
+        );
+      });
+    }
     await this.graphProvider.destroySessionResources(sessionId);
     this.store.delete(sessionId);
   }
@@ -76,7 +83,7 @@ export class SessionService {
   ensureStreamAndExecution(sessionId: string): void {
     const session = this.store.get(sessionId);
     if (!session) throw new Error(`Session not found: ${sessionId}`);
-    if (session.stream && session.execution) return;
+    if (session.stream || session.execution) return;
 
     session.stream = new MultimodalStream();
     const runner = new GraphRunner((packet) => {

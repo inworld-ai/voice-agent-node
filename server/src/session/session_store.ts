@@ -1,13 +1,24 @@
-import type { WebSocket } from 'ws';
+import type { WebSocket } from "ws";
 
-import type { STTService } from '../../../contract';
-import { MultimodalStream } from '../stream/multimodal_stream';
+import type { STTService } from "../../../contract";
+import { MultimodalStream } from "../stream/multimodal_stream";
+
+interface Message {
+  role: "system" | "user" | "assistant";
+  content: string;
+  id: string;
+}
+interface Agent {
+  id: string;
+  name?: string;
+  systemPrompt?: string;
+}
 
 export interface SessionState {
   interactionId: string;
-  agent: any;
+  agent: Agent;
   userName: string;
-  messages: any[];
+  messages: Message[];
   voiceId?: string;
 }
 
