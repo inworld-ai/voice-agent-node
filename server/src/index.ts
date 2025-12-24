@@ -35,7 +35,7 @@ app.get("/health", (_req, res) => {
 const INWORLD_API_KEY = (process.env.INWORLD_API_KEY || "").trim();
 const VOICE_ID = (process.env.VOICE_ID || "Dennis").trim() || "Dennis";
 const VAD_MODEL_PATH = (
-  process.env.VAD_MODEL_PATH || "models/silero_vad/silero_vad_v6.2.onnx"
+  process.env.VAD_MODEL_PATH || "models/silero_vad/silero_vad_v6.0.onnx"
 ).trim();
 const TURN_DETECTOR_MODEL_PATH = (
   process.env.TURN_DETECTOR_MODEL_PATH ||

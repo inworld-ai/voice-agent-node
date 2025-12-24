@@ -2,6 +2,8 @@
 
 Additional binary files included in the Node.js Runtime are distributed by Inworld AI under [LICENSE-CPP-BINARIES](LICENSE-CPP-BINARIES.md).
 
+Additional model weights files included in this repository under [server/models](server/models) for your convinience and distributed under corresponding license terms you can find in corresponding model folder.
+
 MIT License
 
 Copyright (c) 2025 Inworld AI
@@ -23,4 +25,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
