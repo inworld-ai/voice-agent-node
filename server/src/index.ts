@@ -1,5 +1,7 @@
 import 'dotenv/config';
 
+import { stopInworldRuntime } from '@inworld/runtime';
+
 import cors from 'cors';
 import express from 'express';
 import { createServer } from 'http';
@@ -145,3 +147,11 @@ server.on('upgrade', async (request, socket, head) => {
 server.listen(WS_APP_PORT, async () => {
   console.log(`[voice_agent_server] listening on ${WS_APP_PORT}`);
 });
+
+['SIGINT', 'SIGTERM', 'exit'].forEach(
+    (signal) => {
+        process.on(signal, async () => {
+            await stopInworldRuntime();
+        });
+    },
+);
