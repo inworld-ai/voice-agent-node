@@ -15,6 +15,27 @@ export const AVAILABLE_VOICES: Voice[] = [
     languages: ['en'],
   },
   {
+    voiceId: 'Blake',
+    displayName: 'Blake',
+    description:
+      'Rich, intimate male voice, perfect for audiobooks, romantic content, and reassuring narration',
+    languages: ['en'],
+  },
+  {
+    voiceId: 'Carter',
+    displayName: 'Carter',
+    description:
+      'Energetic, mature radio announcer-style male voice, great for storytelling, pep talks, and voiceovers',
+    languages: ['en'],
+  },
+  {
+    voiceId: 'Clive',
+    displayName: 'Clive',
+    description:
+      'British-accented English-language male voice with a calm, cordial quality',
+    languages: ['en'],
+  },
+  {
     voiceId: 'Craig',
     displayName: 'Craig',
     description: 'Older British male with a refined and articulate voice',
@@ -33,16 +54,16 @@ export const AVAILABLE_VOICES: Voice[] = [
     languages: ['en'],
   },
   {
-    voiceId: 'Edward',
-    displayName: 'Edward',
-    description: 'Male with a fast-talking, emphatic and streetwise tone',
+    voiceId: 'Dominus',
+    displayName: 'Dominus',
+    description:
+      'Robotic, deep male voice with a menacing quality. Perfect for villains',
     languages: ['en'],
   },
   {
-    voiceId: 'Elizabeth',
-    displayName: 'Elizabeth',
-    description:
-      'Professional middle-aged woman, perfect for narrations and voiceovers',
+    voiceId: 'Edward',
+    displayName: 'Edward',
+    description: 'Male with a fast-talking, emphatic and streetwise tone',
     languages: ['en'],
   },
   {
@@ -53,17 +74,17 @@ export const AVAILABLE_VOICES: Voice[] = [
     languages: ['en'],
   },
   {
-    voiceId: 'Julia',
-    displayName: 'Julia',
+    voiceId: 'Hana',
+    displayName: 'Hana',
     description:
-      'Quirky, high-pitched female voice that delivers lines with playful energy',
+      'Bright, expressive young female voice, perfect for storytelling, gaming, and playful content',
     languages: ['en'],
   },
   {
-    voiceId: 'Pixie',
-    displayName: 'Pixie',
+    voiceId: 'Luna',
+    displayName: 'Luna',
     description:
-      'High-pitched, childlike female voice with a squeaky quality - great for a cartoon character',
+      'Calm, relaxing female voice, perfect for meditations, sleep stories, and mindfulness exercises',
     languages: ['en'],
   },
   {
@@ -79,9 +100,10 @@ export const AVAILABLE_VOICES: Voice[] = [
     languages: ['en'],
   },
   {
-    voiceId: 'Priya',
-    displayName: 'Priya',
-    description: 'Even-toned female voice with an Indian accent',
+    voiceId: 'Pixie',
+    displayName: 'Pixie',
+    description:
+      'High-pitched, childlike female voice with a squeaky quality - great for a cartoon character',
     languages: ['en'],
   },
   {
@@ -95,12 +117,6 @@ export const AVAILABLE_VOICES: Voice[] = [
     displayName: 'Sarah',
     description:
       'Fast-talking young adult woman, with a questioning and curious tone',
-    languages: ['en'],
-  },
-  {
-    voiceId: 'Shaun',
-    displayName: 'Shaun',
-    description: 'Friendly, dynamic male voice great for conversations',
     languages: ['en'],
   },
   {
@@ -119,13 +135,6 @@ export const AVAILABLE_VOICES: Voice[] = [
     voiceId: 'Wendy',
     displayName: 'Wendy',
     description: 'Posh, middle-aged British female voice',
-    languages: ['en'],
-  },
-  {
-    voiceId: 'Dominus',
-    displayName: 'Dominus',
-    description:
-      'Robotic, deep male voice with a menacing quality. Perfect for villains',
     languages: ['en'],
   },
 ];

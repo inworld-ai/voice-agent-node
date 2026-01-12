@@ -12,6 +12,7 @@ export type ConfigurationSession = {
   agent?: ConfigurationAgent;
   user?: ConfigurationUser;
   voiceId?: string;
+  voiceName?: string; // Display name for custom cloned voice
   sttService?: STTService;
 };
 
@@ -36,6 +37,7 @@ export type Configuration = {
   scene?: ConfigurationScene;
   user?: ConfigurationUser;
   voiceId?: string;
+  voiceName?: string; // Display name for custom cloned voice
   sttService?: STTService;
 };
 

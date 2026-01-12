@@ -4,7 +4,7 @@
 export const DEFAULT_VOICE_ID = 'Alex';
 export const DEFAULT_LLM_MODEL_NAME = 'llama-3.3-70b-versatile'; //'gpt-4o-mini';
 export const DEFAULT_PROVIDER = 'groq'; //'openai';
-export const DEFAULT_TTS_MODEL_ID = 'inworld-tts-1';
+export const DEFAULT_TTS_MODEL_ID = 'inworld-tts-1-max';
 export const DEFAULT_VAD_MODEL_PATH = 'models/silero_vad.onnx';
 
 // Audio Configuration (used by graph-based VAD)

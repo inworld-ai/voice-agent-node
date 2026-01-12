@@ -14,13 +14,14 @@ import { body } from 'express-validator';
 import { WS_APP_PORT } from '../constants';
 import { InworldApp } from './components/app';
 import { MessageHandler } from './components/message_handler';
+import { generateCharacterPrompt } from './character_generator';
 
 const app = express();
 const server = createServer(app);
 const webSocket = new WebSocketServer({ noServer: true });
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' })); // Increased for voice cloning audio uploads
 app.use(express.static('frontend'));
 
 const inworldApp = new InworldApp();
@@ -86,6 +87,101 @@ app.post(
   '/unload',
   query('sessionId').trim().isLength({ min: 1 }),
   inworldApp.unload.bind(inworldApp),
+);
+
+// Character generation endpoint
+app.post(
+  '/generate-character',
+  body('description').trim().isLength({ min: 1 }),
+  body('model').optional().isIn(['openai', 'claude']),
+  async (req, res) => {
+    try {
+      const { description, model = 'openai' } = req.body;
+      const result = await generateCharacterPrompt(description, model);
+      res.json(result);
+    } catch (error: any) {
+      console.error('Character generation error:', error);
+      res.status(500).json({ 
+        error: error.message || 'Failed to generate character' 
+      });
+    }
+  },
+);
+
+// Voice cloning endpoint
+app.post(
+  '/clone-voice',
+  body('audioData').isString().isLength({ min: 1 }),
+  body('displayName').trim().isLength({ min: 1 }),
+  async (req, res) => {
+    console.log('\n🎤 VOICE CLONING');
+    
+    try {
+      const { audioData, displayName, langCode = 'EN_US' } = req.body;
+
+      // Use Portal API key if available, otherwise fall back to regular API key
+      const portalApiKey = process.env.INWORLD_PORTAL_API_KEY || process.env.INWORLD_API_KEY;
+      if (!portalApiKey) {
+        return res.status(500).json({ error: 'INWORLD_API_KEY not set' });
+      }
+
+      // Get workspace from environment or use default
+      const workspace = process.env.INWORLD_WORKSPACE || 'voice_agent_demo';
+      const parent = `workspaces/${workspace}`;
+
+      console.log(`🎤 Cloning voice: "${displayName}" for workspace: ${workspace}`);
+
+      const cloneResponse = await fetch(`https://api.inworld.ai/voices/v1/${parent}/voices:clone`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${portalApiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          displayName: displayName.trim(),
+          langCode,
+          voiceSamples: [{
+            audioData,
+          }],
+          audioProcessingConfig: { removeBackgroundNoise: false },
+        }),
+      });
+
+      if (!cloneResponse.ok) {
+        const errorData = await cloneResponse.json().catch(() => ({})) as { error?: { message?: string } };
+        console.error('❌ Voice clone failed:', errorData);
+        return res.status(cloneResponse.status).json({ 
+          error: errorData.error?.message || `Voice cloning failed (${cloneResponse.status})` 
+        });
+      }
+
+      const cloneData = await cloneResponse.json() as { 
+        voice?: { voiceId?: string; name?: string; displayName?: string };
+        audioSamplesValidated?: Array<{ warnings?: string[]; errors?: Array<{ text: string }> }>;
+      };
+      
+      // Check for validation errors
+      const errors = cloneData.audioSamplesValidated?.[0]?.errors;
+      if (errors && errors.length > 0) {
+        console.error('❌ Voice clone validation errors:', errors);
+        return res.status(400).json({
+          error: `Voice cloning validation failed: ${errors.map(e => e.text).join(', ')}`
+        });
+      }
+
+      console.log(`✅ Voice cloned: ${cloneData.voice?.voiceId}`);
+
+      res.json({
+        voiceId: cloneData.voice?.voiceId,
+        voiceName: cloneData.voice?.name,
+        displayName: cloneData.voice?.displayName,
+        warnings: cloneData.audioSamplesValidated?.[0]?.warnings || [],
+      });
+    } catch (error: any) {
+      console.error('❌ Error cloning voice:', error);
+      res.status(500).json({ error: error.message || 'Failed to clone voice' });
+    }
+  },
 );
 
 server.on('upgrade', async (request, socket, head) => {

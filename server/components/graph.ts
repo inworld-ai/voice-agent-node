@@ -175,7 +175,7 @@ export class InworldGraphWrapper {
       speakerId: voiceId, // Default voice (fallback only - TTSRequestBuilderNode overrides this per session)
       modelId: ttsModelId,
       sampleRate: TTS_SAMPLE_RATE,
-      temperature: 0.8,
+      temperature: 1.1,
       speakingRate: 1,
     });
 
