@@ -4,7 +4,7 @@
 class AudioCaptureProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
-    this.bufferSize = 1600; // 100ms chunks at 16kHz sample rate (aligns with setInterval timing in Chat.tsx)
+    this.bufferSize = 2400; // 100ms chunks at 24kHz sample rate = 2400 samples
     this.buffer = [];
     this.sampleCount = 0;
   }

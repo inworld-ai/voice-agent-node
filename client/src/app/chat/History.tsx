@@ -17,8 +17,8 @@ interface HistoryProps {
 }
 
 type CombinedHistoryItem = {
-  interactionId: string;
-  messages: HistoryItemActor[];
+  id: string;
+  message: HistoryItemActor;
   source: Actor;
   type: CHAT_HISTORY_TYPE;
 };
@@ -68,7 +68,6 @@ export const History = (props: HistoryProps) => {
   }, [combinedChatHistory]);
 
   useEffect(() => {
-    let currentRecord: CombinedHistoryItem | undefined;
     const mergedRecords: CombinedHistoryItem[] = [];
     const hasActors = history.find(
       (record: ChatHistoryItem) => record.type === CHAT_HISTORY_TYPE.ACTOR,
@@ -79,107 +78,105 @@ export const History = (props: HistoryProps) => {
       ),
     );
 
-    for (let i = 0; i < history.length; i++) {
-      let item = history[i];
-      switch (item.type) {
-        case CHAT_HISTORY_TYPE.ACTOR:
-          // For agent messages, also check if there's a placeholder to merge into
-          if (item.source.isAgent) {
-            currentRecord = mergedRecords.find(
-              (r) =>
-                r.interactionId === item.interactionId &&
-                r.type === CHAT_HISTORY_TYPE.ACTOR &&
-                r.source.isAgent &&
-                (r.source.name === item.source.name || r.messages.length === 0), // Match by name or if it's a placeholder
-            ) as CombinedHistoryItem;
-          } else {
-            // For user messages, match by name as before
-            currentRecord = mergedRecords.find(
-              (r) =>
-                r.interactionId === item.interactionId &&
-                [CHAT_HISTORY_TYPE.ACTOR].includes(r.messages?.[0]?.type) &&
-                r.type === CHAT_HISTORY_TYPE.ACTOR &&
-                r.source.name === item.source.name,
-            ) as CombinedHistoryItem;
-          }
-
-          if (currentRecord) {
-            currentRecord.messages.push(item);
-            // Update source name if it was a placeholder
-            if (currentRecord.messages.length === 1 && currentRecord.source.name === 'Assistant' && item.source.name !== 'Assistant') {
-              currentRecord.source = item.source;
-            }
-          } else {
-            currentRecord = {
-              interactionId: item.interactionId,
-              messages: [item],
-              source: item.source,
-              type: CHAT_HISTORY_TYPE.ACTOR,
-            } as CombinedHistoryItem;
-            mergedRecords.push(currentRecord);
-          }
-          break;
-      }
-    }
-
-    // Interaction is considered ended
-    // when there is no actor action yet (chat is not started)
-    // or last received message is INTERACTION_END.
-    const lastInteractionId =
-      filteredEvents[filteredEvents.length - 1]?.interactionId;
-
-    const interactionEnd = filteredEvents.find(
-      (event) =>
-        event.interactionId === lastInteractionId &&
-        event.type === CHAT_HISTORY_TYPE.INTERACTION_END,
-    );
-
-    setIsInteractionEnd(!hasActors || (!!currentRecord && !!interactionEnd));
-
-    // Find the last user message/interaction that doesn't have an agent response yet
-    // Look for user messages and check if they have corresponding agent messages
+    // Find the most recent user message that doesn't have an agent response yet
     const userMessages = history.filter(
       (item) => item.type === CHAT_HISTORY_TYPE.ACTOR && item.source?.isUser === true
     );
     
-    // Find the most recent user message that doesn't have an agent response
-    let pendingUserInteractionId: string | undefined;
+    let pendingUserMessageId: string | undefined;
     for (let i = userMessages.length - 1; i >= 0; i--) {
       const userMsg = userMessages[i];
-      const hasAgentResponse = mergedRecords.some(
+      // Check if there's an agent message in history after this user message
+      const userMsgIndex = history.findIndex((item) => item.id === userMsg.id);
+      const hasAgentResponse = history.slice(userMsgIndex + 1).some(
         (item) => 
-          item.interactionId === userMsg.interactionId && 
+          item.type === CHAT_HISTORY_TYPE.ACTOR &&
           item.source.isAgent &&
-          item.messages.some((m) => !m.isRecognizing && m.text && m.text.trim().length > 0)
+          !item.isRecognizing &&
+          item.text &&
+          item.text.trim().length > 0
       );
       
       if (!hasAgentResponse) {
-        pendingUserInteractionId = userMsg.interactionId;
+        pendingUserMessageId = userMsg.id;
         break;
       }
     }
 
-    // Add placeholder typing bubble if there's a pending user interaction waiting for agent response
-    if (pendingUserInteractionId) {
-      // Check if placeholder doesn't already exist
-      const placeholderExists = mergedRecords.some(
-        (item) => item.interactionId === pendingUserInteractionId && item.source.isAgent && item.messages.length === 0
-      );
-      
-      if (!placeholderExists) {
-        const placeholderItem: CombinedHistoryItem = {
-          interactionId: pendingUserInteractionId,
-          messages: [],
-          source: {
-            name: 'Assistant',
-            isAgent: true,
-            isUser: false,
-          } as Actor,
-          type: CHAT_HISTORY_TYPE.ACTOR,
-        };
-        mergedRecords.push(placeholderItem);
+    // Process all history items in order - each message is independent
+    // Track which user messages have assistant responses to avoid duplicate placeholders
+    const userMessagesWithResponses = new Set<string>();
+    
+    for (let i = 0; i < history.length; i++) {
+      let item = history[i];
+      switch (item.type) {
+        case CHAT_HISTORY_TYPE.ACTOR:
+          // Each message is independent - create a record for it
+          const record: CombinedHistoryItem = {
+            id: item.id,
+            message: item,
+            source: item.source,
+            type: CHAT_HISTORY_TYPE.ACTOR,
+          };
+          mergedRecords.push(record);
+          
+          // Track user messages that have assistant responses
+          if (item.source.isAgent) {
+            // Find the most recent user message before this assistant message
+            for (let j = i - 1; j >= 0; j--) {
+              const prevItem = history[j];
+              if (prevItem.type === CHAT_HISTORY_TYPE.ACTOR && prevItem.source?.isUser) {
+                userMessagesWithResponses.add(prevItem.id);
+                break;
+              }
+            }
+          }
+          break;
       }
     }
+    
+    // Add placeholders only for user messages that don't have assistant responses yet
+    for (let i = 0; i < history.length; i++) {
+      let item = history[i];
+      if (item.type === CHAT_HISTORY_TYPE.ACTOR && item.source.isUser && item.id === pendingUserMessageId) {
+        // Only add placeholder if this user message doesn't have a response yet
+        if (!userMessagesWithResponses.has(item.id)) {
+          const placeholder: CombinedHistoryItem = {
+            id: `placeholder-${item.id}`,
+            message: {
+              ...item,
+              id: `placeholder-${item.id}`,
+              text: '',
+              isRecognizing: true,
+              source: {
+                name: 'Assistant',
+                isAgent: true,
+                isUser: false,
+              },
+            } as HistoryItemActor,
+            source: {
+              name: 'Assistant',
+              isAgent: true,
+              isUser: false,
+            },
+            type: CHAT_HISTORY_TYPE.ACTOR,
+          };
+          // Insert placeholder right after the user message
+          const userMessageIndex = mergedRecords.findIndex((r) => r.id === item.id);
+          if (userMessageIndex >= 0) {
+            mergedRecords.splice(userMessageIndex + 1, 0, placeholder);
+          } else {
+            mergedRecords.push(placeholder);
+          }
+        }
+      }
+    }
+
+    // Interaction is considered ended when there is no actor action yet or last received message is INTERACTION_END
+    const lastEvent = filteredEvents[filteredEvents.length - 1];
+    const interactionEnd = lastEvent?.type === CHAT_HISTORY_TYPE.INTERACTION_END;
+
+    setIsInteractionEnd(!hasActors || !!interactionEnd);
 
     setCombinedChatHistory(mergedRecords);
   }, [history, isInteractionEnd]);
@@ -224,18 +221,17 @@ export const History = (props: HistoryProps) => {
     >
       <Stack spacing={1}>
         {combinedChatHistory.map((item, index) => {
-          let messages = item.messages;
           // Determine if this is an agent message by checking if it's NOT a user message
           const isAgent = !item.source?.isUser;
 
-          // Find latency for this interaction (for agent messages)
+          // Find latency for this message (for agent messages, use the message id)
           const latency = isAgent
-            ? latencyData.find((l) => l.interactionId === item.interactionId)
+            ? latencyData.find((l) => l.interactionId === item.id)
             : null;
 
           return (
             <Box
-              key={`message-group-${item.interactionId}-${index}`}
+              key={`message-${item.id}-${index}`}
               sx={{
                 display: 'flex',
                 flexDirection: 'column',
@@ -347,8 +343,8 @@ export const History = (props: HistoryProps) => {
                   transition: 'all 0.3s ease-in-out',
                 }}
               >
-                {messages.length === 0 ? (
-                  // Show typing indicator when no messages yet (placeholder)
+                {!item.message.text || item.message.text.trim().length === 0 ? (
+                  // Show typing indicator when no text yet (placeholder)
                   <Typing />
                 ) : (
                   <Typography
@@ -360,9 +356,7 @@ export const History = (props: HistoryProps) => {
                       fontWeight: 400,
                     }}
                   >
-                    {messages.map((m) => (
-                      <React.Fragment key={m.id}>{getContent(m)}</React.Fragment>
-                    ))}
+                    {getContent(item.message)}
                   </Typography>
                 )}
               </Box>

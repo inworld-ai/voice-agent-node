@@ -1,4 +1,4 @@
-import { TTS_SAMPLE_RATE } from '../../../../constants';
+import { TTS_SAMPLE_RATE } from '../constants/audio';
 
 interface Audio {
   chunk: string;

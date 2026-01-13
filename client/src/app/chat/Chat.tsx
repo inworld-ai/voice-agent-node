@@ -12,7 +12,7 @@ import {
 } from '@mui/material';
 import { useCallback, useEffect, useState } from 'react';
 
-import { INPUT_SAMPLE_RATE } from '../../../../constants';
+import { INPUT_SAMPLE_RATE } from '../constants/audio';
 import { config } from '../../config';
 import { ChatHistoryItem, InteractionLatency } from '../types';
 import { RecordIcon } from './Chat.styled';
@@ -34,6 +34,29 @@ let stream: MediaStream;
 let audioCtx: AudioContext;
 let audioWorkletNode: AudioWorkletNode;
 
+/**
+ * Convert Float32Array audio to PCM16 Int16Array and base64 encode
+ * OpenAI Realtime Protocol requires PCM16 at 24kHz
+ */
+function convertAudioToPCM16Base64(float32Audio: Float32Array): string {
+  // Convert Float32 (-1.0 to 1.0) to Int16 (-32768 to 32767)
+  const int16Array = new Int16Array(float32Audio.length);
+  for (let i = 0; i < float32Audio.length; i++) {
+    // Clamp to [-1, 1] and convert to Int16 range
+    // s < 0 ? s * 0x8000 : s * 0x7fff
+    const s = Math.max(-1, Math.min(1, float32Audio[i]));
+    int16Array[i] = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff);
+  }
+
+  // Convert Int16Array to base64
+  const bytes = new Uint8Array(int16Array.buffer);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary);
+}
+
 export function Chat(props: ChatProps) {
   const { chatHistory, connection, latencyData, onStopRecordingRef, isLoaded } = props;
 
@@ -50,13 +73,18 @@ export function Chat(props: ChatProps) {
 
   const stopRecording = useCallback(() => {
     setIsRecording(false);
-    clearInterval(interval);
+    if (interval) {
+      clearInterval(interval);
+      interval = 0;
+    }
     stream?.getTracks().forEach((track) => track.stop());
     audioWorkletNode?.disconnect();
-    if (connection) {
-      connection.send(JSON.stringify({ type: 'audioSessionEnd' }));
+    if (audioCtx && audioCtx.state !== 'closed') {
+      audioCtx.close().catch((error) => {
+        console.warn('Error closing audio context:', error);
+      });
     }
-  }, [connection]);
+  }, []);
 
   // Expose stopRecording to parent via ref
   useEffect(() => {
@@ -70,15 +98,36 @@ export function Chat(props: ChatProps) {
     };
   }, [stopRecording, onStopRecordingRef]);
 
+  // Stop recording if connection closes
+  useEffect(() => {
+    if (connection && isRecording) {
+      const handleClose = () => {
+        if (isRecording) {
+          console.log('🛑 Connection closed, stopping recording');
+          stopRecording();
+        }
+      };
+
+      connection.addEventListener('close', handleClose);
+      return () => {
+        connection.removeEventListener('close', handleClose);
+      };
+    }
+  }, [connection, isRecording, stopRecording]);
+
   const startRecording = useCallback(async () => {
     if (!connection || !isLoaded) return;
     
     try {
       setIsRecording(true);
 
+      // Use 24kHz directly to match OpenAI Realtime Protocol requirements
+      const TARGET_SAMPLE_RATE = 24000;
+      
       stream = await navigator.mediaDevices.getUserMedia({
         audio: {
-          sampleRate: INPUT_SAMPLE_RATE,
+          channelCount: 1,
+          sampleRate: TARGET_SAMPLE_RATE,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
@@ -87,7 +136,7 @@ export function Chat(props: ChatProps) {
       });
 
       audioCtx = new AudioContext({
-        sampleRate: INPUT_SAMPLE_RATE,
+        sampleRate: TARGET_SAMPLE_RATE,
       });
 
       // Load the AudioWorklet processor
@@ -111,15 +160,45 @@ export function Chat(props: ChatProps) {
       // Connect source to worklet (no need to connect to destination!)
       source.connect(audioWorkletNode);
 
-      // Send accumulated audio chunks periodically
+      // Send accumulated audio chunks periodically using OpenAI Realtime Protocol (PCM16 base64 at 24kHz)
       interval = setInterval(() => {
         if (leftChannel.length > 0 && connection) {
-          connection.send(
-            JSON.stringify({
-              type: 'audio',
-              audio: leftChannel,
-            }),
-          );
+          // Check if connection is still open before sending
+          if (connection.readyState !== WebSocket.OPEN) {
+            console.warn('⚠️ WebSocket is not open, stopping recording');
+            stopRecording();
+            return;
+          }
+
+          // Concatenate all Float32Array chunks into one
+          const totalLength = leftChannel.reduce((sum, arr) => sum + arr.length, 0);
+          const concatenated = new Float32Array(totalLength);
+          let offset = 0;
+          for (const chunk of leftChannel) {
+            concatenated.set(chunk, offset);
+            offset += chunk.length;
+          }
+
+          // Convert to PCM16 and base64 encode (already at 24kHz from AudioContext)
+          const base64Audio = convertAudioToPCM16Base64(concatenated);
+
+          if (base64Audio) {
+            // Send using OpenAI Realtime Protocol
+            try {
+              connection.send(
+                JSON.stringify({
+                  type: 'input_audio_buffer.append',
+                  audio: base64Audio,
+                }),
+              );
+            } catch (error) {
+              console.error('⚠️ Error sending audio data:', error);
+              stopRecording();
+            }
+          } else {
+            console.warn('⚠️ Failed to convert audio to PCM16 base64');
+          }
+
           // Clear buffer
           leftChannel = [];
         }
@@ -146,7 +225,32 @@ export function Chat(props: ChatProps) {
 
     if (trimmedText && trimmedText.length > 0) {
       console.log('✅ Sending text message:', JSON.stringify(trimmedText));
-      connection.send(JSON.stringify({ type: 'text', text: trimmedText }));
+      
+      // Send using OpenAI Realtime Protocol
+      // First create a conversation item
+      connection.send(
+        JSON.stringify({
+          type: 'conversation.item.create',
+          item: {
+            type: 'message',
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: trimmedText,
+              },
+            ],
+          },
+        }),
+      );
+
+      // Then trigger a response
+      connection.send(
+        JSON.stringify({
+          type: 'response.create',
+        }),
+      );
+
       setText('');
       // Keep text widget open after sending
     } else {

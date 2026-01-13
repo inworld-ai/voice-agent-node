@@ -18,6 +18,7 @@ import {
   CHAT_HISTORY_TYPE,
   ChatHistoryItem,
   Configuration,
+  HistoryItemActor,
   InteractionLatency,
 } from './app/types';
 import { config } from './config';
@@ -76,6 +77,7 @@ function App() {
 
   const currentInteractionId = useRef<string | null>(null);
   const stopRecordingRef = useRef<(() => void) | undefined>(undefined);
+  const transcriptBuffers = useRef<Map<string, string>>(new Map()); // item_id -> accumulated transcript
   const stateRef = useRef<CurrentContext>({} as CurrentContext);
   stateRef.current = {
     agent,
@@ -95,216 +97,279 @@ function App() {
   }, []);
 
   const onMessage = useCallback((message: MessageEvent) => {
-    const packet = JSON.parse(message.data);
+    const event = JSON.parse(message.data);
+    const eventType = event?.type;
 
     let chatItem: ChatHistoryItem | undefined = undefined;
 
-    if (packet?.type === 'AUDIO') {
-      player.addToQueue({ audio: packet.audio });
+    console.log('📨 Received event:', eventType, event);
 
-      // Track first audio chunk for latency calculation (client-side)
-      const interactionId = packet.packetId?.interactionId;
-      if (interactionId) {
-        setLatencyData((prev) => {
-          const existing = prev.find(
-            (item) => item.interactionId === interactionId,
-          );
-
-          if (existing && !existing.firstAudioTimestamp) {
-            const firstAudioTimestamp = Date.now();
-            // Calculate latency: prefer speechCompleteTimestamp, fallback to userTextTimestamp
-            const startTimestamp =
-              existing.speechCompleteTimestamp || existing.userTextTimestamp;
-            const latencyMs = startTimestamp
-              ? firstAudioTimestamp - startTimestamp
-              : undefined;
-
-            // Log latency with endpointing latency info for debugging
-            const endpointingLatencyMs =
-              existing.metadata?.endpointingLatencyMs || 0;
-            if (latencyMs !== undefined && endpointingLatencyMs > 0) {
-              const totalLatency = latencyMs + endpointingLatencyMs;
-              console.log(
-                `⏱️ Latency for interaction ${interactionId}: ${totalLatency}ms total ` +
-                  `(${endpointingLatencyMs}ms endpointing + ${latencyMs}ms processing) ` +
-                  `(from ${existing.speechCompleteTimestamp ? 'speech complete' : 'text input'})`,
-              );
-            } else if (latencyMs !== undefined) {
-              console.log(
-                `⏱️ Latency for interaction ${interactionId}: ${latencyMs}ms ` +
-                  `(from ${existing.speechCompleteTimestamp ? 'speech complete' : 'text input'})`,
-              );
-            }
-
-            return prev.map((item) =>
-              item.interactionId === interactionId
-                ? { ...item, firstAudioTimestamp, latencyMs }
-                : item,
-            );
+    if (eventType === 'session.created') {
+      console.log('✅ Session created');
+      // Session is ready, we can start sending audio/text
+    } else if (eventType === 'response.output_audio.delta' || eventType === 'response.audio.delta') {
+      // Audio chunk from agent response
+      // Audio format is determined by audio.output.format in session.update
+      // Currently the server implementation sends PCM16 base64 (Int16Array at 24kHz)
+      if (event.delta) {
+        try {
+          // Decode base64 to get PCM16 Int16Array bytes
+          const binaryString = atob(event.delta);
+          const bytes = new Uint8Array(binaryString.length);
+          for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
           }
-          return prev;
-        });
-      }
-    } else if (packet?.type === 'NEW_INTERACTION') {
-      currentInteractionId.current = packet.packetId?.interactionId;
-      const interactionId = packet.packetId?.interactionId;
 
-      // Track userTextTimestamp for text-based interactions
-      // This is when the NEW_INTERACTION arrives at the client (after text is sent)
-      if (interactionId) {
-        setLatencyData((prev) => {
-          const existing = prev.find(
-            (item) => item.interactionId === interactionId,
-          );
-          // Only create/update if we don't already have this interaction (from speech)
-          if (!existing) {
-            return [
-              ...prev,
-              {
-                interactionId,
-                userTextTimestamp: Date.now(),
-                userText: '', // Will be updated when we receive the text back
-              },
-            ];
+          // Convert to Int16Array (PCM16)
+          const int16Array = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.length / 2);
+          
+          // Convert Int16 to Float32 for Player
+          const float32Array = new Float32Array(int16Array.length);
+          for (let i = 0; i < int16Array.length; i++) {
+            float32Array[i] = int16Array[i] / 32768.0; // Convert to -1.0 to 1.0 range
           }
-          return prev;
-        });
+          
+          // Convert Float32Array to base64 for Player (Player expects base64 Float32 PCM)
+          const floatBytes = new Uint8Array(float32Array.buffer);
+          let binary = '';
+          for (let i = 0; i < floatBytes.length; i++) {
+            binary += String.fromCharCode(floatBytes[i]);
+          }
+          const base64Float32 = btoa(binary);
+          
+          player.addToQueue({ audio: { chunk: base64Float32 } });
+
+          // Track first audio chunk for latency calculation
+          const itemId = event.item_id;
+          if (itemId) {
+            // Find the most recent user message to calculate latency
+            setChatHistory((currentState) => {
+              const userMessages = currentState.filter(
+                (item) => item.type === CHAT_HISTORY_TYPE.ACTOR && item.source?.isUser === true
+              );
+              
+              if (userMessages.length > 0) {
+                const mostRecentUserMessage = userMessages[userMessages.length - 1];
+                const userTextTimestamp = mostRecentUserMessage.date?.getTime() || Date.now();
+                
+                // Get text from user message (only if it's an ACTOR type)
+                const userText = mostRecentUserMessage.type === CHAT_HISTORY_TYPE.ACTOR 
+                  ? (mostRecentUserMessage as HistoryItemActor).text 
+                  : '';
+                
+                setLatencyData((prev) => {
+                  const existing = prev.find((item) => item.interactionId === itemId);
+                  
+                  if (!existing || !existing.firstAudioTimestamp) {
+                    const firstAudioTimestamp = Date.now();
+                    const latencyMs = firstAudioTimestamp - userTextTimestamp;
+                    
+                    console.log(`⏱️ Latency for assistant item ${itemId}: ${latencyMs}ms`);
+                    
+                    if (existing) {
+                      return prev.map((item) =>
+                        item.interactionId === itemId
+                          ? { ...item, firstAudioTimestamp, latencyMs }
+                          : item,
+                      );
+                    } else {
+                      return [
+                        ...prev,
+                        {
+                          interactionId: itemId,
+                          firstAudioTimestamp,
+                          latencyMs,
+                          userTextTimestamp,
+                          userText: userText,
+                        },
+                      ];
+                    }
+                  }
+                  return prev;
+                });
+              }
+              
+              return currentState; // No state change, just using it for reading
+            });
+          }
+        } catch (error) {
+          console.error('Error processing audio delta:', error);
+        }
       }
-    } else if (packet?.type === 'CANCEL_RESPONSE') {
-      console.log('Cancel response: stopping audio playback');
-      player.stop();
-    } else if (packet?.type === 'USER_SPEECH_COMPLETE') {
-      // User's speech has been detected and processed (VAD detected end of speech)
-      // Record timestamp on client side for latency measurement
-      const interactionId = packet.packetId?.interactionId;
-      const speechCompleteTimestamp = Date.now();
-
-      console.log(
-        `🎤 User speech complete for interaction ${interactionId}`,
-        packet.metadata,
-      );
-
-      setLatencyData((prev) => {
-        const existing = prev.find(
-          (item) => item.interactionId === interactionId,
-        );
-
-        if (!existing) {
-          // Create new entry for audio-based interaction
-          return [
-            ...prev,
-            {
-              interactionId,
-              speechCompleteTimestamp,
-              userText: 'Voice input', // Will be updated when we receive the transcribed text
-              metadata: packet.metadata,
+    } else if (eventType === 'response.output_audio_transcript.delta' || eventType === 'response.audio_transcript.delta') {
+      // Streaming transcript from agent - accumulate deltas
+      const { agent } = stateRef.current || {};
+      const itemId = event.item_id;
+      const delta = event.delta || '';
+      
+      if (itemId && delta) {
+        // Accumulate transcript deltas by item_id
+        const currentTranscript = transcriptBuffers.current.get(itemId) || '';
+        const updatedTranscript = currentTranscript + delta;
+        transcriptBuffers.current.set(itemId, updatedTranscript);
+        
+        if (updatedTranscript.trim().length > 0) {
+          chatItem = {
+            id: itemId,
+            type: CHAT_HISTORY_TYPE.ACTOR,
+            date: new Date(),
+            text: updatedTranscript,
+            interactionId: itemId, // Use item_id directly as the message ID
+            isRecognizing: true, // This is a delta, not final
+            author: agent?.name,
+            source: {
+              name: agent?.name || 'Agent',
+              isUser: false,
+              isAgent: true,
             },
-          ];
-        } else {
-          // Update existing entry with speech completion time
-          return prev.map((item) =>
-            item.interactionId === interactionId
-              ? { ...item, speechCompleteTimestamp, metadata: packet.metadata }
-              : item,
-          );
+          };
         }
-      });
-    } else if (packet?.type === 'TEXT') {
-      const { agent, userName } = stateRef.current || {};
-      const textContent = packet.text.text || '';
-      const trimmedText = textContent.trim();
-      const isAgent = packet.routing?.source?.isAgent;
-
-      console.log(
-        '📝 TEXT PACKET - From:',
-        isAgent === true ? 'AGENT' : 'USER',
-        'Original:',
-        JSON.stringify(textContent),
-        'Trimmed:',
-        JSON.stringify(trimmedText),
-        'Length:',
-        trimmedText.length,
-        'Final:',
-        packet.text.final,
-        'isAgent:',
-        isAgent,
-      );
-
-      // Only filter empty messages from USER (not from AGENT)
-      // isAgent is true for agent messages, undefined/false for user messages
-      if (trimmedText.length > 0 || isAgent === true) {
-        console.log('✅ Adding text message to chat');
-        
-        // Format audio transcripts for user messages (ensure proper sentence structure)
-        let displayText = packet.text.text;
-        if (!isAgent) {
-          displayText = formatAudioTranscript(packet.text.text, packet.text.final);
-        }
-        
-        chatItem = {
-          id: packet.packetId?.utteranceId,
-          type: CHAT_HISTORY_TYPE.ACTOR,
-          date: new Date(packet.date!),
-          source: packet.routing?.source,
-          text: displayText, // Formatted text for user messages, original for agent messages
-          interactionId: packet.packetId?.interactionId,
-          isRecognizing: !packet.text.final,
-          author: isAgent === true ? agent?.name : userName,
-        };
-
-        // Update latency data with user text for display
-        if (!isAgent && packet.text.final && packet.packetId?.interactionId) {
-          const formattedUserText = formatAudioTranscript(trimmedText, true);
-          console.log(
-            `🎯 User text received for interaction ${packet.packetId.interactionId}: "${formattedUserText}"`,
-          );
-          setLatencyData((prev) => {
-            return prev.map((item) =>
-              item.interactionId === packet.packetId.interactionId &&
-              !item.userText
-                ? { ...item, userText: formattedUserText }
-                : item,
-            );
-          });
-        }
-      } else {
-        console.log(
-          '❌ Filtered out empty USER text message - not adding to chat',
-        );
       }
-    } else if (packet?.type === 'INTERACTION_END') {
-      chatItem = {
-        id: v4(),
-        type: CHAT_HISTORY_TYPE.INTERACTION_END,
-        date: new Date(packet.date!),
-        source: packet.routing?.source,
-        interactionId: packet.packetId?.interactionId,
-      };
-    } else if (packet?.type === 'ERROR') {
+    } else if (eventType === 'response.output_audio_transcript.done' || eventType === 'response.audio_transcript.done') {
+      // Final transcript from agent
+      const { agent } = stateRef.current || {};
+      const itemId = event.item_id;
+      const transcriptText = event.transcript || '';
+      
+      // Clear the buffer for this item
+      if (itemId) {
+        transcriptBuffers.current.delete(itemId);
+      }
+      
+      if (transcriptText.trim().length > 0) {
+        chatItem = {
+          id: itemId,
+          type: CHAT_HISTORY_TYPE.ACTOR,
+          date: new Date(),
+          text: transcriptText,
+          interactionId: itemId, // Use item_id directly as the message ID
+          isRecognizing: false, // Final transcript
+          author: agent?.name,
+          source: {
+            name: agent?.name || 'Agent',
+            isUser: false,
+            isAgent: true,
+          },
+        };
+      }
+    } else if (eventType === 'input_audio_buffer.speech_started') {
+      console.log('🎤 User started speaking');
+    } else if (eventType === 'input_audio_buffer.speech_stopped') {
+      // User's speech has been detected and processed (VAD detected end of speech)
+      const speechCompleteTimestamp = Date.now();
+      console.log('🎤 User speech stopped', event);
+
+      // Track speech completion - we'll get the interaction ID from conversation.item.added
+      // For now, we'll update it when conversation.item.added arrives
+    } else if (eventType === 'conversation.item.added') {
+      // User message item added (from speech or text)
+      // This is the event the server actually sends
+      const item = event.item;
+      if (item?.type === 'message' && item.role === 'user') {
+        // Extract text from content array
+        // Content can have text or transcript fields
+        const textContent = item.content?.map((c: any) => c.text || c.transcript || '').join('') || '';
+        const trimmedText = textContent.trim();
+        const itemId = item.id;
+        const userName = stateRef.current?.userName || 'User';
+        
+        if (trimmedText.length > 0) {
+          const formattedText = formatAudioTranscript(trimmedText, true);
+          chatItem = {
+            id: itemId || v4(),
+            type: CHAT_HISTORY_TYPE.ACTOR,
+            date: new Date(),
+            text: formattedText,
+            interactionId: itemId, // Use item.id directly as the message ID
+            isRecognizing: false,
+            author: userName,
+            source: {
+              name: userName,
+              isUser: true,
+              isAgent: false,
+            },
+          };
+
+          console.log('👤 User message added to chat:', formattedText);
+          console.log('👤 User message item_id:', itemId);
+          // Note: Latency will be calculated when assistant response arrives (using assistant's item_id)
+        }
+      }
+    } else if (eventType === 'response.created') {
+      // response.created event - no matching needed, item_id will come in subsequent events
+      const responseId = event.response?.id || event.response_id;
+      currentInteractionId.current = responseId;
+      console.log('📝 Response created:', responseId);
+    } else if (eventType === 'response.done') {
+      // Response is complete - ensure any recognizing messages are marked as final
+      const itemId = event.item_id;
+      console.log('✅ Response done, item_id:', itemId);
+      
+      if (itemId) {
+        // Clear any transcript buffer for this item
+        transcriptBuffers.current.delete(itemId);
+        
+        // Update any recognizing messages for this item to be final
+        setChatHistory((currentState) => {
+          const hasRecognizingMessage = currentState.some(
+            (item) =>
+              item.type === CHAT_HISTORY_TYPE.ACTOR &&
+              item.id === itemId &&
+              item.isRecognizing === true &&
+              item.source.isAgent
+          );
+          
+          if (hasRecognizingMessage) {
+            // Update existing recognizing messages to be final
+            return currentState.map((item) => {
+              if (
+                item.type === CHAT_HISTORY_TYPE.ACTOR &&
+                item.id === itemId &&
+                item.isRecognizing === true &&
+                item.source.isAgent
+              ) {
+                // Mark as final (not recognizing anymore)
+                return {
+                  ...item,
+                  isRecognizing: false,
+                };
+              }
+              return item;
+            });
+          }
+          return currentState;
+        });
+      }
+    } else if (eventType === 'response.cancelled') {
+      console.log('🛑 Response cancelled: stopping audio playback');
+      player.stop();
+    } else if (eventType === 'error') {
       // Stop recording if active when any error occurs
       if (stopRecordingRef.current) {
         console.log('🛑 Stopping recording due to error');
         stopRecordingRef.current();
       }
 
-      toast.error(packet?.error ?? 'Something went wrong');
+      const errorMessage = event.error?.message || event.error || 'Something went wrong';
+      toast.error(errorMessage);
     }
 
     if (chatItem) {
       setChatHistory((currentState) => {
         let newState = undefined;
 
-        // For partial/recognizing messages, find by interactionId + isRecognizing
-        // This allows us to update the same message as it's being transcribed
+        // Find messages by their unique id (item_id from API)
+        // For partial/recognizing messages, find by id + isRecognizing to update as it streams
         let currentHistoryIndex = -1;
         if (
           chatItem.type === CHAT_HISTORY_TYPE.ACTOR &&
           chatItem.isRecognizing
         ) {
+          // Find existing recognizing message with same id
           currentHistoryIndex = currentState.findIndex((item) => {
             return (
               item.type === CHAT_HISTORY_TYPE.ACTOR &&
-              item.interactionId === chatItem?.interactionId &&
+              item.id === chatItem?.id &&
               item.isRecognizing === true &&
               item.source?.isAgent === chatItem?.source?.isAgent
             );
@@ -317,7 +382,7 @@ function App() {
           const partialIndex = currentState.findIndex((item) => {
             return (
               item.type === CHAT_HISTORY_TYPE.ACTOR &&
-              item.interactionId === chatItem?.interactionId &&
+              item.id === chatItem?.id &&
               item.isRecognizing === true &&
               item.source?.isAgent === chatItem?.source?.isAgent
             );
@@ -327,7 +392,7 @@ function App() {
             // Replace the partial message with the final one
             currentHistoryIndex = partialIndex;
           } else {
-            // Otherwise, find by utteranceId (for agent messages or direct updates)
+            // Otherwise, find by id
             currentHistoryIndex = currentState.findIndex((item) => {
               return item.id === chatItem?.id;
             });
@@ -360,104 +425,159 @@ function App() {
     setChatting(true);
     setUserName(user?.name!);
 
-    const response = await fetch(`${config.LOAD_URL}?sessionId=${key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userName: user?.name,
-        agent,
-        voiceId,
-        sttService: 'assemblyai', // Always use Assembly.AI (only supported STT service)
-      }),
-    });
-    const data = await response.json();
+    // Build connection URL and protocols
 
-    if (!response.ok) {
+    const wsUrl = `${config.REALTIME_API_URL}/session?key=${key}&protocol=realtime`;
+    
+    // Always send authentication if API key is configured
+    // This ensures the server always has credentials for Inworld API calls
+    const shouldSendAuth = config.INWORLD_API_KEY && config.INWORLD_API_KEY.trim();
+    
+    // Remove all base64 padding (=) characters as they're invalid in WebSocket subprotocols
+    const protocols = shouldSendAuth
+      ? [`basic_${config.INWORLD_API_KEY.replace(/=/g, '')}`]
+      : undefined;
+    
+    console.log('🔌 Connecting to:', wsUrl);
+    if (protocols) {
+      console.log('🔐 Using authentication subprotocol:', protocols[0].substring(0, 20) + '...');
+    } else {
+      console.log('⚠️  No API key configured - connecting without authentication');
+    }
+
+    // Validate WebSocket URL format
+    if (!wsUrl.startsWith('ws://') && !wsUrl.startsWith('wss://')) {
+      console.error('❌ Invalid WebSocket URL format:', wsUrl);
+      toast.error('Invalid WebSocket URL. Must start with ws:// or wss://');
       setChatting(false);
-
-      // Handle STT service configuration errors
-      if (data.error && data.requestedService) {
-        const envVarMap: { [key: string]: string } = {
-          assemblyai: 'ASSEMBLY_AI_API_KEY',
-        };
-
-        const envVar = envVarMap[data.requestedService];
-        const availableList = data.availableServices?.join(', ') || 'assemblyai';
-
-        // Build error message
-        let errorMessage = data.error;
-        if (envVar) {
-          errorMessage += `\n\nPlease set the ${envVar} environment variable on the server.`;
-        }
-        if (data.error.includes('Only Assembly.AI STT is supported')) {
-          errorMessage += `\n\nThe requested STT service "${data.requestedService}" is not supported. Only Assembly.AI is available.`;
-        }
-        errorMessage += `\n\nAvailable STT services: ${availableList}`;
-
-        toast.error(errorMessage, {
-          duration: 8000,
-          style: {
-            maxWidth: '500px',
-          },
-        });
-
-        console.error('STT Service Error:', {
-          error: data.error,
-          requestedService: data.requestedService,
-          availableServices: data.availableServices,
-          requiredEnvVar: envVar,
-        });
-      } else {
-        // Generic error handling
-        toast.error(
-          `Failed to create session: ${data.errors || response.statusText}`,
-        );
-        console.log(response.statusText, ': ', data.errors);
-      }
-
       return;
     }
 
-    if (data.agent) {
-      setAgent(data.agent as Agent);
+    let ws: WebSocket;
+    try {
+      console.log('🔌 Creating WebSocket connection...');
+      console.log('   URL:', wsUrl);
+      console.log('   Protocols:', protocols || 'none');
+      
+      ws = protocols
+        ? new WebSocket(wsUrl, protocols)
+        : new WebSocket(wsUrl);
+      
+      console.log('✅ WebSocket object created, readyState:', ws.readyState);
+    } catch (error) {
+      console.error('❌ Failed to create WebSocket:', error);
+      toast.error(`Failed to create WebSocket: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      setChatting(false);
+      return;
     }
-
-    // Add a small delay to ensure server has fully processed the session
-    // This prevents race conditions where WebSocket connects before session is ready
-    await new Promise((resolve) => setTimeout(resolve, 100));
-
-    const ws = new WebSocket(`${config.SESSION_URL}?sessionId=${key}`);
 
     // Add error handler for WebSocket connection failures
     ws.addEventListener('error', (error) => {
-      console.error('WebSocket error:', error);
-      toast.error('Failed to establish WebSocket connection');
+      console.error('❌ WebSocket error event:', error);
+      console.error('WebSocket readyState:', ws.readyState);
+      console.error('WebSocket URL:', wsUrl);
+      toast.error('Failed to establish WebSocket connection. Check console for details.');
       setChatting(false);
     });
 
     // Add close handler to detect unexpected disconnections
     ws.addEventListener('close', (event) => {
+      console.log('🔌 WebSocket closed:', {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+      });
+      
       if (event.code === 1008) {
-        console.error('WebSocket closed: Session not found');
+        console.error('❌ WebSocket closed: Session not found or invalid');
         toast.error('Session not found. Please try again.');
+        setChatting(false);
+      } else if (event.code === 1006) {
+        console.error('❌ WebSocket closed abnormally (1006). Possible causes:');
+        console.error('  - Network connectivity issues');
+        console.error('  - Server not reachable');
+        console.error('  - Authentication failed');
+        console.error('  - CORS issues');
+        toast.error('Connection closed abnormally. Check console for details.');
+        setChatting(false);
+      } else if (event.code === 1002) {
+        console.error('❌ WebSocket closed: Protocol error (1002)');
+        toast.error('Protocol error. Check authentication configuration.');
         setChatting(false);
       } else if (!event.wasClean) {
         console.error(
-          'WebSocket closed unexpectedly:',
-          event.code,
-          event.reason,
+          '❌ WebSocket closed unexpectedly:',
+          `Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`,
         );
+        toast.error(`Connection closed: ${event.reason || `Code ${event.code}`}`);
+        setChatting(false);
       }
     });
 
-    setConnection(ws);
+    // Handle WebSocket open - send session.update event
+    ws.addEventListener('open', () => {
+      console.log('✅ WebSocket connected successfully');
+      console.log('📡 Selected protocol:', ws.protocol || 'none');
+      console.log('📡 Ready state:', ws.readyState);
+      
+      // Send session.update with configuration
+      const sessionUpdate = {
+        type: 'session.update',
+        session: {
+          type: 'realtime',
+          output_modalities: ['text', 'audio'],
+          instructions: agent?.systemPrompt || 'You are a helpful assistant.',
+          audio: {
+            input: {
+              turn_detection: {
+                type: 'semantic_vad',
+                eagerness: 'medium', // 'low' | 'medium' | 'high'
+                create_response: true,
+                interrupt_response: false,
+              },
+              transcription: {
+                model: 'gpt-4o-mini-transcribe',
+              },
+            },
+            output: {
+              voice: voiceId || 'Alex',
+            },
+          },
+        },
+      };
 
-    ws.addEventListener('open', onOpen);
+      console.log('📤 Sending session.update:', JSON.stringify(sessionUpdate, null, 2));
+      
+      try {
+        ws.send(JSON.stringify(sessionUpdate));
+        console.log('✅ session.update sent successfully');
+      } catch (error) {
+        console.error('❌ Failed to send session.update:', error);
+        toast.error('Failed to send session configuration');
+        setChatting(false);
+        return;
+      }
+      
+      // Set agent info if available
+      if (agent) {
+        setAgent(agent as Agent);
+      }
+      
+      onOpen();
+    });
+
+    setConnection(ws);
     ws.addEventListener('message', onMessage);
     ws.addEventListener('disconnect', onDisconnect);
   }, [formMethods, onDisconnect, onMessage, onOpen]);
 
   const stopChatting = useCallback(async () => {
+    // Stop recording first (before closing connection)
+    if (stopRecordingRef.current) {
+      console.log('🛑 Stopping recording before closing connection');
+      stopRecordingRef.current();
+    }
+
     // Disable flags
     setChatting(false);
     setOpen(false);
@@ -468,6 +588,7 @@ function App() {
     // Clear collections (only when fully exiting to config)
     setChatHistory([]);
     setLatencyData([]);
+    transcriptBuffers.current.clear();
 
     // Close connection and clear connection data
     if (connection) {
@@ -481,10 +602,6 @@ function App() {
     setConnection(undefined);
     setAgent(undefined);
 
-    await fetch(`${config.UNLOAD_URL}?sessionId=${key}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-    });
     key = '';
   }, [connection, onDisconnect, onMessage, onOpen]);
 

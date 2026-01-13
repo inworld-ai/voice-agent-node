@@ -2,7 +2,7 @@ import { CopyAll, Mic, Send } from '@mui/icons-material';
 import { Box, IconButton, InputAdornment, TextField } from '@mui/material';
 import { useCallback, useState } from 'react';
 
-import { INPUT_SAMPLE_RATE } from '../../../../constants';
+import { INPUT_SAMPLE_RATE } from '../constants/audio';
 import { CHAT_HISTORY_TYPE, ChatHistoryItem } from '../types';
 import { ActionsStyled, RecordIcon } from './Chat.styled';
 import { CopyConfirmedDialog } from './CopyConfirmedDialog';

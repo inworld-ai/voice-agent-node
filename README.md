@@ -6,7 +6,7 @@
 [![Model Providers](https://img.shields.io/badge/Model_Providers-See_Models-purple)](https://docs.inworld.ai/docs/models#llm)
 [![Live Demo](https://img.shields.io/badge/Live_Demo-Try_It_Now-brightgreen)](https://voice-agent-client-dlvldu24na-uc.a.run.app)
 
-This application demonstrates a simple chat interface with an AI agent that can respond to text and voice inputs, powered by Inworld AI Runtime.
+This application demonstrates a simple chat interface with an AI agent that can respond to text and voice inputs, powered by Inworld AI Runtime. The server implements the **OpenAI Realtime API protocol** for WebSocket-based real-time voice and audio interactions.
 
 ## Prerequisites
 
@@ -66,8 +66,7 @@ The client will start on port 3000 and should automatically open in your default
 ### Step 5: Configure and Use the Application
 
 1. Define the agent settings:
-   - Enter the agent system prompt
-   - Select an Speech to Text service
+   - Enter the agent system prompt (instructions)
    - Click "Create Agent"
 
 2. Interact with the agent:
@@ -78,91 +77,67 @@ The client will start on port 3000 and should automatically open in your default
 
 ```
 voice-agent-node/
-├── server/                       # Backend handling Inworld's LLM, STT, and TTS services
-│   ├── components/
-│   │   ├── graph.ts              # Main graph-based pipeline orchestration
-│   │   ├── stt_graph.ts          # Speech-to-text graph configuration
-│   │   ├── message_handler.ts    # WebSocket message handling
-│   │   ├── audio_handler.ts      # Audio stream processing
-│   │   └── nodes/                # Graph node implementations (STT, LLM, TTS processing)
-│   ├── models/
-│   │   └── silero_vad.onnx       # VAD model for voice activity detection
-│   ├── index.ts                  # Server entry point
-│   ├── package.json
-│   └── tsconfig.json
-├── client/                       # Frontend React application
+├── server/                          # Backend: OpenAI Realtime API + Inworld Graph Framework
 │   ├── src/
-│   │   ├── app/                  # UI components (chat, configuration, shared components)
+│   │   ├── components/
+│   │   │   ├── realtime/           # Realtime API protocol implementation
+│   │   │   │   ├── realtime_message_handler.ts
+│   │   │   │   ├── realtime_session_manager.ts
+│   │   │   │   └── realtime_event_factory.ts
+│   │   │   ├── audio/              # Audio stream processing
+│   │   │   │   ├── realtime_audio_handler.ts
+│   │   │   │   └── multimodal_stream_manager.ts
+│   │   │   ├── graphs/             # Graph pipeline orchestration
+│   │   │   │   ├── graph.ts
+│   │   │   │   ├── realtime_graph_executor.ts
+│   │   │   │   └── nodes/          # Graph nodes (STT, LLM, TTS, etc.)
+│   │   │   ├── app.ts
+│   │   │   └── runtime_app_manager.ts
+│   │   ├── types/                  # TypeScript definitions
+│   │   ├── index.ts                # Server entry point
+│   │   └── config.ts
+│   ├── REALTIME_API.md             # OpenAI Realtime API documentation
+│   ├── .env-sample                 # Environment variables template
+│   └── package.json
+├── client/                          # Frontend React application
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── chat/               # Chat UI components
+│   │   │   ├── configuration/     # Agent configuration UI
+│   │   │   └── components/        # Shared components
 │   │   ├── App.tsx
-│   │   └── index.tsx
-│   ├── public/
-│   ├── package.json
-│   └── vite.config.mts
-├── constants.ts
+│   │   └── config.ts
+│   ├── .env-sample
+│   └── package.json
 └── LICENSE
 ```
 
-## Architecture
+### Protocol & API
 
-The voice agent server uses Inworld's Graph Framework with two main processing pipelines:
+The server implements the **OpenAI Realtime API protocol** for all WebSocket connections. This provides a standardized interface for real-time voice interactions, compatible with OpenAI's Realtime API specification.
 
-### Pipeline Overview
+**Key Features:**
+- OpenAI Realtime API compatible protocol
+- Session management via `session.update` events
+- Support for audio input/output, text messages, and conversation management
+- Server-side Voice Activity Detection (VAD) with configurable eagerness levels
+- Streaming audio and transcript responses
 
-```mermaid
-flowchart TB
-    subgraph AUDIO["AUDIO INPUT PIPELINE"]
-        AudioInput[AudioInput]
-        
-        subgraph OPT1["Assembly.AI STT Pipeline"]
-            AssemblyAI[AssemblyAI STT]
-            TranscriptExtractor[TranscriptExtractor]
-            SpeechNotif1[SpeechCompleteNotifier<br/>terminal node]
-            
-            AssemblyAI -->|interaction_complete| TranscriptExtractor
-            AssemblyAI -->|interaction_complete| SpeechNotif1
-            AssemblyAI -->|stream_exhausted=false<br/>loop| AssemblyAI
-        end
-        
-        AudioInput --> OPT1
-        
-        TranscriptExtractor --> InteractionQueue
-    end
-    
-    subgraph TEXT["TEXT PROCESSING & TTS PIPELINE"]
-        TextInput[TextInput]
-        DialogPrompt[DialogPromptBuilder]
-        LLM[LLM]
-        TextChunk[TextChunking]
-        TextAgg[TextAggregator]
-        TTS[TTS<br/>end]
-        StateUpdate[StateUpdate]
-        
-        TextInput --> DialogPrompt
-        DialogPrompt --> LLM
-        LLM --> TextChunk
-        LLM --> TextAgg
-        TextChunk --> TTS
-        TextAgg --> StateUpdate
-        StateUpdate -.->|loop optional| InteractionQueue
-    end
-    
-    InteractionQueue -->|text.length>0| TextInput
-
-    style SpeechNotif1 fill:#f9f,stroke:#333,stroke-width:2px,color:#000
-    style TTS fill:#9f9,stroke:#333,stroke-width:2px,color:#000
-```
+For detailed API documentation, see [REALTIME_API.md](server/REALTIME_API.md).
 
 ### STT Provider
 
-The server uses **Assembly.AI** as the Speech-to-Text provider, which provides high accuracy with built-in speech segmentation.
+The server uses **Assembly.AI** as the Speech-to-Text provider, which provides high accuracy with built-in speech segmentation and semantic VAD (Voice Activity Detection).
 
 ## Troubleshooting
 
 - If you encounter connection issues, ensure both server and client are running. Server should be running on port 4000 and client can be running on port 3000 or any other port.
 - Check that your API keys are valid and properly set in the `.env` file:
   - `INWORLD_API_KEY` - Required for Inworld services
-  - `ASSEMBLY_AI_API_KEY` - Required for speech-to-text functionality
+  - `ASSEMBLYAI_API_KEY` - Required for speech-to-text functionality (note: `ASSEMBLYAI_API_KEY`, not `ASSEMBLY_AI_API_KEY`)
 - For voice input issues, ensure your browser has microphone permissions.
+- The server uses the OpenAI Realtime API protocol. Ensure your client is sending the correct event types (see [REALTIME_API.md](server/REALTIME_API.md) for details).
+- If you see WebSocket connection errors, verify that the session key is provided in the query string: `ws://localhost:4000/session?key=YOUR_SESSION_KEY`
 
 **Bug Reports**: [GitHub Issues](https://github.com/inworld-ai/voice-agent-node/issues)
 
