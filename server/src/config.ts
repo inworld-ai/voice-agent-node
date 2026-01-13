@@ -6,8 +6,8 @@ export const INPUT_SAMPLE_RATE = 16000; // Sample rate for STT input (Assembly.A
 export const WS_APP_PORT = 4000; // WebSocket server port
 
 // LLM Model Configuration
-export const DEFAULT_LLM_MODEL_NAME = process.env.LLM_MODEL_NAME || 'meta-llama/Llama-3.1-70b-Instruct';
-export const DEFAULT_LLM_PROVIDER = process.env.LLM_PROVIDER || 'inworld';
+export const DEFAULT_LLM_MODEL_NAME = process.env.LLM_MODEL_NAME || 'llama-3.3-70b-versatile';
+export const DEFAULT_LLM_PROVIDER = process.env.LLM_PROVIDER || 'groq';
 
 // Voice and TTS Configuration
 export const DEFAULT_VOICE_ID = process.env.VOICE_ID || 'Dennis';
