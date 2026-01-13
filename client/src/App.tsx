@@ -488,6 +488,12 @@ function App() {
         wasClean: event.wasClean,
       });
       
+      // Stop recording if active when connection closes
+      if (stopRecordingRef.current) {
+        console.log('🛑 Stopping recording due to WebSocket close');
+        stopRecordingRef.current();
+      }
+      
       if (event.code === 1008) {
         console.error('❌ WebSocket closed: Session not found or invalid');
         toast.error('Session not found. Please try again.');
@@ -504,6 +510,12 @@ function App() {
         console.error('❌ WebSocket closed: Protocol error (1002)');
         toast.error('Protocol error. Check authentication configuration.');
         setChatting(false);
+      } else if (event.code === 1011) {
+        // Server error (e.g., JS Call Timeout)
+        console.error('❌ WebSocket closed: Server error (1011)');
+        console.error('Reason:', event.reason || 'No reason provided');
+        toast.error(event.reason || 'Server error. Connection closed.');
+        setChatting(false);
       } else if (!event.wasClean) {
         console.error(
           '❌ WebSocket closed unexpectedly:',
@@ -511,6 +523,13 @@ function App() {
         );
         toast.error(`Connection closed: ${event.reason || `Code ${event.code}`}`);
         setChatting(false);
+      } else {
+        // Even if wasClean is true, if we're still in chatting state, we should return to settings
+        // This handles cases where the server cleanly closes the connection (e.g., timeout)
+        if (stateRef.current.chatting) {
+          console.log('🔌 WebSocket closed cleanly, returning to settings');
+          setChatting(false);
+        }
       }
     });
 
