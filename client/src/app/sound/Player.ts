@@ -31,7 +31,8 @@ export class Player {
   }
 
   getIsPlaying(): boolean {
-    return this.isPlaying;
+    // Check if we're processing the queue OR if there are active audio sources playing
+    return this.isPlaying || this.currentSources.length > 0;
   }
 
   getQueueLength(): number {
@@ -39,7 +40,7 @@ export class Player {
   }
 
   stop() {
-    // Stop all currently playing sources
+    // Stop all currently playing sources immediately
     this.currentSources.forEach((source) => {
       try {
         source.stop();
@@ -49,8 +50,10 @@ export class Player {
     });
     this.currentSources = [];
 
-    // Clear queue and reset state
+    // Clear queue completely - this ensures no more audio will be processed
     this.audioPacketQueue = [];
+
+    // Reset state
     this.isPlaying = false;
     this.nextStartTime = 0;
   }

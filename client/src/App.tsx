@@ -254,6 +254,27 @@ function App() {
       }
     } else if (eventType === 'input_audio_buffer.speech_started') {
       console.log('🎤 User started speaking');
+      // Stop audio playback if user interrupts by speaking
+      const { connection } = stateRef.current;
+      const isPlaying = player.getIsPlaying();
+      const queueLength = player.getQueueLength();
+      
+      if (isPlaying || queueLength > 0) {
+        console.log('🛑 Interruption detected: user started speaking during audio playback');
+        player.stop();
+        // Cancel the current response on the server
+        if (currentInteractionId.current && connection && connection.readyState === WebSocket.OPEN) {
+          try {
+            connection.send(JSON.stringify({
+              type: 'response.cancel',
+              response_id: currentInteractionId.current,
+            }));
+            console.log('📤 Sent response.cancel to server');
+          } catch (error) {
+            console.error('Error sending response.cancel:', error);
+          }
+        }
+      }
     } else if (eventType === 'input_audio_buffer.speech_stopped') {
       // User's speech has been detected and processed (VAD detected end of speech)
       const speechCompleteTimestamp = Date.now();
@@ -700,6 +721,8 @@ function App() {
       latencyData={latencyData}
       onStopRecordingRef={stopRecordingRef}
       isLoaded={open && !!agent}
+      player={player}
+      currentResponseIdRef={currentInteractionId}
     />
   ) : (
     <ConfigView

@@ -18,6 +18,7 @@ import { ChatHistoryItem, InteractionLatency } from '../types';
 import { RecordIcon } from './Chat.styled';
 import { History } from './History';
 import { LatencyChart } from './LatencyChart';
+import { Player } from '../sound/Player';
 
 interface ChatProps {
   chatHistory: ChatHistoryItem[];
@@ -27,6 +28,8 @@ interface ChatProps {
   latencyData: InteractionLatency[];
   onStopRecordingRef?: React.MutableRefObject<(() => void) | undefined>;
   isLoaded: boolean;
+  player: Player;
+  currentResponseIdRef?: React.RefObject<string | null>;
 }
 
 let interval: number;
@@ -58,7 +61,7 @@ function convertAudioToPCM16Base64(float32Audio: Float32Array): string {
 }
 
 export function Chat(props: ChatProps) {
-  const { chatHistory, connection, latencyData, onStopRecordingRef, isLoaded } = props;
+  const { chatHistory, connection, latencyData, onStopRecordingRef, isLoaded, player, currentResponseIdRef } = props;
 
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -226,6 +229,36 @@ export function Chat(props: ChatProps) {
     if (trimmedText && trimmedText.length > 0) {
       console.log('✅ Sending text message:', JSON.stringify(trimmedText));
       
+      // Stop audio playback if user interrupts by sending text
+      const isPlaying = player.getIsPlaying();
+      const queueLength = player.getQueueLength();
+      console.log('🔍 Audio state check:', { isPlaying, queueLength });
+      
+      if (isPlaying || queueLength > 0) {
+        console.log('🛑 Interruption detected: user sent text during audio playback');
+        player.stop();
+        // Optionally cancel the current response on the server
+        if (currentResponseIdRef?.current && connection && connection.readyState === WebSocket.OPEN) {
+          try {
+            connection.send(JSON.stringify({
+              type: 'response.cancel',
+              response_id: currentResponseIdRef.current,
+            }));
+            console.log('📤 Sent response.cancel to server for response:', currentResponseIdRef.current);
+          } catch (error) {
+            console.error('Error sending response.cancel:', error);
+          }
+        } else {
+          console.log('⚠️ Could not send response.cancel:', {
+            hasResponseId: !!currentResponseIdRef?.current,
+            hasConnection: !!connection,
+            connectionState: connection?.readyState,
+          });
+        }
+      } else {
+        console.log('ℹ️ No audio playing, no interruption needed');
+      }
+      
       // Check connection state before sending
       if (connection.readyState !== WebSocket.OPEN) {
         console.error('❌ WebSocket is not open, cannot send message');
@@ -269,7 +302,7 @@ export function Chat(props: ChatProps) {
     } else {
       console.log('❌ Blocked empty message - not sending');
     }
-  }, [connection, text, isLoaded]);
+  }, [connection, text, isLoaded, player, currentResponseIdRef]);
 
   const handleTextKeyPress = useCallback(
     (e: React.KeyboardEvent<HTMLInputElement>) => {
