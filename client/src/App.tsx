@@ -476,7 +476,17 @@ function App() {
       console.error('❌ WebSocket error event:', error);
       console.error('WebSocket readyState:', ws.readyState);
       console.error('WebSocket URL:', wsUrl);
-      toast.error('Failed to establish WebSocket connection. Check console for details.');
+      
+      // Stop recording if active when error occurs
+      if (stopRecordingRef.current) {
+        console.log('🛑 Stopping recording due to WebSocket error');
+        stopRecordingRef.current();
+      }
+      
+      // Stop audio playback
+      player.stop();
+      
+      toast.error('Connection error. Server may be unavailable.');
       setChatting(false);
     });
 
@@ -525,9 +535,22 @@ function App() {
         setChatting(false);
       } else {
         // Even if wasClean is true, if we're still in chatting state, we should return to settings
-        // This handles cases where the server cleanly closes the connection (e.g., timeout)
+        // This handles cases where the server cleanly closes the connection (e.g., timeout, server shutdown)
         if (stateRef.current.chatting) {
           console.log('🔌 WebSocket closed cleanly, returning to settings');
+          console.log('Close code:', event.code, 'Reason:', event.reason || 'No reason provided');
+          
+          // Stop audio playback
+          player.stop();
+          
+          // Show appropriate message based on close code
+          if (event.code === 1000) {
+            // Normal closure - might be server shutdown
+            toast.error('Connection closed. Server may have shut down.');
+          } else {
+            toast.error(event.reason || 'Connection closed.');
+          }
+          
           setChatting(false);
         }
       }
@@ -567,12 +590,30 @@ function App() {
 
       console.log('📤 Sending session.update:', JSON.stringify(sessionUpdate, null, 2));
       
+      // Check connection state before sending
+      if (ws.readyState !== WebSocket.OPEN) {
+        console.error('❌ WebSocket is not open, cannot send session.update');
+        console.error('ReadyState:', ws.readyState);
+        toast.error('Connection is not ready. Please try again.');
+        setChatting(false);
+        return;
+      }
+      
       try {
         ws.send(JSON.stringify(sessionUpdate));
         console.log('✅ session.update sent successfully');
       } catch (error) {
         console.error('❌ Failed to send session.update:', error);
-        toast.error('Failed to send session configuration');
+        
+        // Stop recording if active
+        if (stopRecordingRef.current) {
+          stopRecordingRef.current();
+        }
+        
+        // Stop audio playback
+        player.stop();
+        
+        toast.error('Failed to send session configuration. Connection may be lost.');
         setChatting(false);
         return;
       }

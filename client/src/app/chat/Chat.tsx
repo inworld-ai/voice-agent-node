@@ -226,33 +226,46 @@ export function Chat(props: ChatProps) {
     if (trimmedText && trimmedText.length > 0) {
       console.log('✅ Sending text message:', JSON.stringify(trimmedText));
       
-      // Send using OpenAI Realtime Protocol
-      // First create a conversation item
-      connection.send(
-        JSON.stringify({
-          type: 'conversation.item.create',
-          item: {
-            type: 'message',
-            role: 'user',
-            content: [
-              {
-                type: 'input_text',
-                text: trimmedText,
-              },
-            ],
-          },
-        }),
-      );
+      // Check connection state before sending
+      if (connection.readyState !== WebSocket.OPEN) {
+        console.error('❌ WebSocket is not open, cannot send message');
+        console.error('ReadyState:', connection.readyState);
+        // Note: The close handler in App.tsx will handle returning to settings
+        return;
+      }
+      
+      try {
+        // Send using OpenAI Realtime Protocol
+        // First create a conversation item
+        connection.send(
+          JSON.stringify({
+            type: 'conversation.item.create',
+            item: {
+              type: 'message',
+              role: 'user',
+              content: [
+                {
+                  type: 'input_text',
+                  text: trimmedText,
+                },
+              ],
+            },
+          }),
+        );
 
-      // Then trigger a response
-      connection.send(
-        JSON.stringify({
-          type: 'response.create',
-        }),
-      );
+        // Then trigger a response
+        connection.send(
+          JSON.stringify({
+            type: 'response.create',
+          }),
+        );
 
-      setText('');
-      // Keep text widget open after sending
+        setText('');
+        // Keep text widget open after sending
+      } catch (error) {
+        console.error('❌ Error sending text message:', error);
+        // Note: The close handler in App.tsx will handle returning to settings
+      }
     } else {
       console.log('❌ Blocked empty message - not sending');
     }
