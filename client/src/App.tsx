@@ -282,6 +282,71 @@ function App() {
 
       // Track speech completion - we'll get the interaction ID from conversation.item.added
       // For now, we'll update it when conversation.item.added arrives
+    } else if (eventType === 'conversation.item.input_audio_transcription.delta') {
+      // Streaming transcript from user input - accumulate deltas
+      const userName = stateRef.current?.userName || 'User';
+      const itemId = event.item_id;
+      const delta = event.delta || '';
+      
+      if (itemId && delta) {
+        // Accumulate transcript deltas by item_id
+        const currentTranscript = transcriptBuffers.current.get(itemId) || '';
+        const updatedTranscript = currentTranscript + delta;
+        transcriptBuffers.current.set(itemId, updatedTranscript);
+        
+        if (updatedTranscript.trim().length > 0) {
+          // Format transcript but don't add final punctuation yet (isFinal = false)
+          const formattedText = formatAudioTranscript(updatedTranscript, false);
+          chatItem = {
+            id: itemId,
+            type: CHAT_HISTORY_TYPE.ACTOR,
+            date: new Date(),
+            text: formattedText,
+            interactionId: itemId,
+            isRecognizing: true, // This is a delta, not final
+            author: userName,
+            source: {
+              name: userName,
+              isUser: true,
+              isAgent: false,
+            },
+          };
+          
+          console.log('🎤 User transcription delta:', delta);
+          console.log('🎤 User transcription accumulated:', updatedTranscript);
+        }
+      }
+    } else if (eventType === 'conversation.item.input_audio_transcription.completed') {
+      // Final transcript from user input
+      const userName = stateRef.current?.userName || 'User';
+      const itemId = event.item_id;
+      const transcriptText = event.transcript || '';
+      
+      // Clear the buffer for this item
+      if (itemId) {
+        transcriptBuffers.current.delete(itemId);
+      }
+      
+      if (transcriptText.trim().length > 0) {
+        // Format transcript with final punctuation (isFinal = true)
+        const formattedText = formatAudioTranscript(transcriptText, true);
+        chatItem = {
+          id: itemId,
+          type: CHAT_HISTORY_TYPE.ACTOR,
+          date: new Date(),
+          text: formattedText,
+          interactionId: itemId,
+          isRecognizing: false, // Final transcript
+          author: userName,
+          source: {
+            name: userName,
+            isUser: true,
+            isAgent: false,
+          },
+        };
+        
+        console.log('🎤 User transcription completed:', formattedText);
+      }
     } else if (eventType === 'conversation.item.added') {
       // User message item added (from speech or text)
       // This is the event the server actually sends
