@@ -12,7 +12,6 @@ import {
 } from '@mui/material';
 import { useCallback, useEffect, useState } from 'react';
 
-import { INPUT_SAMPLE_RATE } from '../constants/audio';
 import { config } from '../../config';
 import { ChatHistoryItem, InteractionLatency } from '../types';
 import { RecordIcon } from './Chat.styled';
