@@ -370,13 +370,22 @@ export interface SessionConfig {
   prompt?: string | null;
   tracing?: string | null;
   include?: string[] | null;
+  model_id?: {
+    provider: string;
+    modelName: string;
+  };
+  model_selection?: {
+    ignore?: { provider: string; modelName: string }[];
+    models?: { provider: string; modelName: string }[];
+    sort?: { direction: string; metric: string }[];
+  };
+  text_generation_config?: TextGenerationConfig;
 }
 
 export interface Session {
   type: 'realtime';
   id: string;
   object: 'realtime.session';
-  model: string;
   output_modalities: ('text' | 'audio')[];
   instructions: string;
   audio: {
@@ -390,6 +399,16 @@ export interface Session {
   truncation: 'auto' | 'disabled';
   prompt: string | null;
   tracing: string | null;
+  model_id?: {
+    provider: string;
+    modelName: string;
+  };
+  model_selection?: {
+    ignore?: { provider: string; modelName: string }[];
+    models?: { provider: string; modelName: string }[];
+    sort?: { direction: string; metric: string }[];
+  };
+  text_generation_config?: TextGenerationConfig;
   expires_at: number;
   include: string[] | null;
 }
@@ -413,6 +432,24 @@ export interface SemanticVADTurnDetection {
 }
 
 export type TurnDetection = ServerVADTurnDetection | SemanticVADTurnDetection;
+
+export interface LogitBias {
+  token: number;
+  bias: number;
+}
+
+export interface TextGenerationConfig {
+  frequencyPenalty?: number;
+  logitBias?: LogitBias[];
+  maxNewTokens?: number;
+  maxPromptLength?: number;
+  presencePenalty?: number;
+  repetitionPenalty?: number;
+  seed?: number;
+  stopSequences?: string[];
+  temperature?: number;
+  topP?: number;
+}
 
 export interface Tool {
   type: 'function';

@@ -45,8 +45,6 @@ app.use(express.static('frontend'));
 // The graph supports multitenancy natively via API key in execute method
 const env = parseEnvironmentVariables();
 const inworldRuntimeAppManager = new InworldRuntimeAppManager({
-  llmModelName: env.llmModelName,
-  llmProvider: env.llmProvider,
   voiceId: env.voiceId,
   ttsModelId: env.ttsModelId,
   graphVisualizationEnabled: env.graphVisualizationEnabled,

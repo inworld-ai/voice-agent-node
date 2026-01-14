@@ -1,5 +1,5 @@
 import logger from './logger';
-import { DEFAULT_LLM_MODEL_NAME, DEFAULT_LLM_PROVIDER, DEFAULT_VOICE_ID, DEFAULT_TTS_MODEL_ID } from './config';
+import { DEFAULT_VOICE_ID, DEFAULT_TTS_MODEL_ID } from './config';
 
 export const parseEnvironmentVariables = () => {
   if (!process.env.INWORLD_API_KEY) {
@@ -15,8 +15,6 @@ export const parseEnvironmentVariables = () => {
 
   return {
     apiKey: process.env.INWORLD_API_KEY,
-    llmModelName: DEFAULT_LLM_MODEL_NAME,
-    llmProvider: DEFAULT_LLM_PROVIDER,
     voiceId: DEFAULT_VOICE_ID,
     ttsModelId: DEFAULT_TTS_MODEL_ID,
     // Because the env variable is optional and it's a string, we need to convert it to a boolean safely
@@ -26,6 +24,7 @@ export const parseEnvironmentVariables = () => {
     assemblyAIApiKey: process.env.ASSEMBLYAI_API_KEY,
     appName: process.env.APP_NAME || 'realtime-service',
     appVersion: process.env.APP_VERSION || '1.0.0',
+    fallback_model_id: {provider:process.env.DEFAULT_LLM_PROVIDER_NAME || 'google', modelName: process.env.DEFAULT_LLM_MODEL_NAME || 'gemini-2.5-flash'},
   };
 };
 

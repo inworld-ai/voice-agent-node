@@ -2,12 +2,10 @@ import logger from '../logger';
 import { Connection } from '../types/index';
 import { InworldGraphWrapper } from './graphs/graph';
 import { InworldAppConfig } from './runtime_app_manager';
-import { DEFAULT_LLM_MODEL_NAME, DEFAULT_LLM_PROVIDER, DEFAULT_VOICE_ID, DEFAULT_TTS_MODEL_ID } from '../config';
+import { DEFAULT_VOICE_ID, DEFAULT_TTS_MODEL_ID } from '../config';
 
 export class InworldApp {
   graphId?: string;
-  llmModelName: string;
-  llmProvider: string;
   voiceId: string;
   graphVisualizationEnabled: boolean;
   ttsModelId: string;
@@ -16,13 +14,12 @@ export class InworldApp {
   connections: {
     [sessionId: string]: Connection;
   } = {};
+  fallback_model_id: {provider: string, modelName: string};
 
   graphWithAudioInput: InworldGraphWrapper;
 
   private constructor(config: InworldAppConfig) {
     this.graphId = config.graphId;
-    this.llmModelName = config.llmModelName || DEFAULT_LLM_MODEL_NAME;
-    this.llmProvider = config.llmProvider || DEFAULT_LLM_PROVIDER;
     this.voiceId = config.voiceId || DEFAULT_VOICE_ID;
     this.ttsModelId = config.ttsModelId || DEFAULT_TTS_MODEL_ID;
     this.graphVisualizationEnabled = config.graphVisualizationEnabled!;
@@ -46,8 +43,6 @@ export class InworldApp {
   private async initialize() {
     // Create audio graph with Assembly.AI STT (handles both audio and text inputs)
     this.graphWithAudioInput = await InworldGraphWrapper.create({
-      llmModelName: this.llmModelName,
-      llmProvider: this.llmProvider,
       voiceId: this.voiceId,
       connections: this.connections,
       graphVisualizationEnabled: this.graphVisualizationEnabled,

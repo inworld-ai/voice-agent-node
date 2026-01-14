@@ -2,6 +2,7 @@ import { AudioChunkInterface } from '@inworld/runtime/common';
 import { GraphOutputStream } from '@inworld/runtime/graph';
 
 import { MultimodalStreamManager } from '../components/audio/multimodal_stream_manager';
+import { TextGenerationConfig } from './realtime';
 
 export enum EVENT_TYPE {
   TEXT = 'TEXT',
@@ -62,6 +63,16 @@ export interface State {
   toolChoice?: string | object;
   eagerness?: 'low' | 'medium' | 'high';
   output_modalities?: ('text' | 'audio')[];
+  modelId?: {
+    provider: string;
+    modelName: string;
+  };
+  modelSelection?: {
+    ignore?: { provider: string; modelName: string }[];
+    models?: { provider: string; modelName: string }[];
+    sort?: { direction: string; metric: string }[];
+  };
+  textGenerationConfig?: TextGenerationConfig;
 }
 
 export interface Connection {
@@ -90,8 +101,6 @@ export interface PromptInput {
 }
 
 export interface CreateGraphPropsInterface {
-  llmModelName: string;
-  llmProvider: string;
   voiceId: string;
   graphVisualizationEnabled: boolean;
   connections: ConnectionsMap;

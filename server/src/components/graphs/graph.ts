@@ -2,12 +2,12 @@ import {
   Graph,
   GraphBuilder,
   ProxyNode,
-  RemoteLLMChatNode,
   RemoteTTSNode,
   FakeTTSComponent,
   TextAggregatorNode,
-  TextChunkingNode, FakeRemoteLLMComponent,
-  RemoteLLMChatRoutingNode  // TODO: Create GraphTypes.LLMChatRoutingRequest and use remoteLLMChatRoutingNode instead
+  TextChunkingNode,
+  RemoteLLMChatRoutingNode,
+  RealtimeAgentTtsFirstChunkCheckingNode
 } from '@inworld/runtime/graph';
 import * as os from 'os';
 import * as path from 'path';
@@ -26,6 +26,7 @@ import { StateUpdateNode } from './nodes/state_update_node';
 import { TextInputNode } from './nodes/text_input_node';
 import { TranscriptExtractorNode } from './nodes/transcript_extractor_node';
 import { TTSRequestBuilderNode } from './nodes/tts_request_builder_node';
+import { LLMChatRoutingRequestNode } from "./nodes/llm_chat_routing_request_node";
 
 export class InworldGraphWrapper {
   graph: Graph;
@@ -42,8 +43,6 @@ export class InworldGraphWrapper {
 
   static async create(props: CreateGraphPropsInterface) {
     const {
-      llmModelName,
-      llmProvider,
       voiceId,
       connections,
       ttsModelId,
@@ -52,9 +51,10 @@ export class InworldGraphWrapper {
 
     const postfix = `-multimodal`;
 
-    const dialogPromptBuilderNode = new DialogPromptBuilderNode({
-      id: `dialog-prompt-builder-node${postfix}`,
-    });
+    const llmChatRoutingRequestNode = new LLMChatRoutingRequestNode({
+      id: `llm-chat-routing-request-node${postfix}`,
+    })
+
 
     const textInputNode = new TextInputNode({
       id: `text-input-node${postfix}`,
@@ -62,26 +62,20 @@ export class InworldGraphWrapper {
       reportToClient: true,
     });
 
-    const llmNode = new RemoteLLMChatNode({
-      id: `llm-node${postfix}`,
-      provider: llmProvider,
-      modelName: llmModelName,
-      stream: true,
-      textGenerationConfig: {
-        maxNewTokens: 320
-      },
-      reportToClient: true,
-      ...(useMocks && {
-        llmComponent: new FakeRemoteLLMComponent({
-          id: `llm-component${postfix}`,
-          modelName: llmModelName,
-          provider: llmProvider,
-        }),
-      }),
-    });
+
+    const llmRouterNode = new RemoteLLMChatRoutingNode({
+      id: `llm-router-node${postfix}`,
+      defaultTimeout: 90,
+      defaults: {
+        textGenerationConfig:{
+          maxNewTokens: 320
+        }
+      }
+    })
 
     const textChunkingNode = new TextChunkingNode({
       id: `text-chunking-node${postfix}`,
+      reportToClient:false,
     });
 
     const textAggregatorNode = new TextAggregatorNode({
@@ -124,31 +118,31 @@ export class InworldGraphWrapper {
       }),
     });
 
-    // A second branch that only executes text chunking - we will not execute TTS when output_modality doesn't contain audio
-    const dialogPromptBuilderNodeTextOnly = new DialogPromptBuilderNode({
-      id: `dialog-prompt-builder-node-text-only${postfix}`,
+    const ttsFirstNode = new RealtimeAgentTtsFirstChunkCheckingNode({
+      id: 'tts_first_chunk_checking_node',
+      reportToClient: true,
     });
+
+    // A second branch that only executes text chunking - we will not execute TTS when output_modality doesn't contain audio
 
     const textChunkingNodeTextOnly = new TextChunkingNode({
       id: `text-chunking-node-text-only${postfix}`,
       reportToClient: true,
     });
 
-    const llmNodeTextOnly = new RemoteLLMChatNode({
-      id: `llm-node-text-only${postfix}`,
-      provider: llmProvider,
-      modelName: llmModelName,
-      stream: true,
-      textGenerationConfig: { maxNewTokens: 320 },
-      reportToClient: true,
-      ...(useMocks && {
-        llmComponent: new FakeRemoteLLMComponent({
-          id: `llm-component-text-only${postfix}`,
-          modelName: llmModelName,
-          provider: llmProvider,
-        }),
-      }),
-    });
+    const llmRouterNodeTextOnly = new RemoteLLMChatRoutingNode({
+      id: `llm-router-node-text-only${postfix}`,
+      defaultTimeout: 90,
+      defaults: {
+        textGenerationConfig:{
+          maxNewTokens: 320
+        }
+      }
+    })
+
+    const llmChatRoutingRequestNodeTextOnly = new LLMChatRoutingRequestNode({
+      id: `llm-chat-routing-request-node-text-only${postfix}`,
+    })
 
     const textAggregatorNodeTextOnly = new TextAggregatorNode({
       id: `text-aggregator-node-text-only${postfix}`,
@@ -169,20 +163,20 @@ export class InworldGraphWrapper {
 
     graphBuilder
       .addNode(textInputNode)
-      .addNode(dialogPromptBuilderNode)
-      .addNode(llmNode)
+      .addNode(llmChatRoutingRequestNode)
+      .addNode(llmRouterNode)
       .addNode(textChunkingNode)
       .addNode(textAggregatorNode)
       .addNode(ttsRequestBuilderNode)
       .addNode(ttsNode)
       .addNode(stateUpdateNode)
-      .addEdge(textInputNode, dialogPromptBuilderNode, {
+      .addEdge(textInputNode, llmChatRoutingRequestNode, {
         condition: async (input: State) => {
           return input?.output_modalities.includes("audio")
         },
       })
-      .addEdge(dialogPromptBuilderNode, llmNode)
-      .addEdge(llmNode, textChunkingNode)
+      .addEdge(llmChatRoutingRequestNode, llmRouterNode)
+      .addEdge(llmRouterNode, textChunkingNode)
       .addEdge(textInputNode, ttsRequestBuilderNode, {
         condition: async (input: State) => {
           return input?.output_modalities.includes("audio")
@@ -190,24 +184,23 @@ export class InworldGraphWrapper {
       })
       .addEdge(textChunkingNode, ttsRequestBuilderNode)
       .addEdge(ttsRequestBuilderNode, ttsNode)
-      .addEdge(llmNode, textAggregatorNode)
+      .addEdge(llmRouterNode, textAggregatorNode)
       .addEdge(textAggregatorNode, stateUpdateNode)
       // Text-only outputs nodes/edges
-      .addNode(dialogPromptBuilderNodeTextOnly)
+      .addNode(llmChatRoutingRequestNodeTextOnly)
       .addNode(textChunkingNodeTextOnly)
-      .addNode(llmNodeTextOnly)
+      .addNode(llmRouterNodeTextOnly)
       .addNode(textAggregatorNodeTextOnly)
       .addNode(stateUpdateNodeTextOnly)
-      .addEdge(textInputNode, dialogPromptBuilderNodeTextOnly, {
+      .addEdge(textInputNode, llmChatRoutingRequestNodeTextOnly, {
         condition: async (input: State) => {
           return !input?.output_modalities.includes("audio") && input?.output_modalities.includes("text")
         },
       })
-      .addEdge(dialogPromptBuilderNodeTextOnly, llmNodeTextOnly)
-      .addEdge(llmNodeTextOnly, textChunkingNodeTextOnly)
-      .addEdge(llmNodeTextOnly, textAggregatorNodeTextOnly)
-      .addEdge(textAggregatorNodeTextOnly, stateUpdateNodeTextOnly)
-      ;
+      .addEdge(llmChatRoutingRequestNodeTextOnly, llmRouterNodeTextOnly)
+      .addEdge(llmRouterNodeTextOnly, textChunkingNodeTextOnly)
+      .addEdge(llmRouterNodeTextOnly, textAggregatorNodeTextOnly)
+      .addEdge(textAggregatorNodeTextOnly, stateUpdateNodeTextOnly);
 
 
     // Validate configuration

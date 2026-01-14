@@ -42,21 +42,21 @@ export class RealtimeSessionManager {
     const expiresAt = Math.floor(Date.now() / 1000) + 900;
 
     const defaultOutputModalities: ('text' | 'audio')[] = ['audio', 'text'];
-    
+
     // Sync default to connection state
     if (connection) {
       connection.state.output_modalities = defaultOutputModalities;
     }
-    
+
     return {
       id: sessionId,
       session: {
         type: 'realtime',
         id: sessionId,
         object: 'realtime.session',
-        model: this.inworldApp.llmModelName,
         output_modalities: defaultOutputModalities,
         instructions,
+        model_id: this.inworldApp.fallback_model_id,
         audio: {
           input: {
             format: {
@@ -109,7 +109,7 @@ export class RealtimeSessionManager {
     // Deep merge session configuration
     if (sessionConfig.output_modalities !== undefined) {
       this.realtimeSession.session.output_modalities = sessionConfig.output_modalities;
-      
+
       // Sync to connection state for easy access by sessionId
       const connection = this.inworldApp.connections[this.sessionKey];
       if (connection) {
@@ -174,7 +174,7 @@ export class RealtimeSessionManager {
               ...this.realtimeSession.session.audio.input.turn_detection,
               ...sessionConfig.audio.input.turn_detection,
             };
-            
+
             // Handle semantic_vad eagerness settings
             if (sessionConfig.audio.input.turn_detection.type === 'semantic_vad') {
               const eagerness = sessionConfig.audio.input.turn_detection.eagerness;
@@ -282,6 +282,39 @@ export class RealtimeSessionManager {
       this.realtimeSession.session.include = sessionConfig.include;
     }
 
+    if (sessionConfig.model_id !== undefined) {
+      this.realtimeSession.session.model_id = sessionConfig.model_id;
+
+      // Update connection state
+      const connection = this.inworldApp.connections[this.sessionKey];
+      if (connection) {
+        connection.state.modelId = sessionConfig.model_id;
+        logger.info({ sessionId: this.sessionKey, modelId: sessionConfig.model_id }, `Updated connection.state.modelId`);
+      }
+    }
+
+    if (sessionConfig.model_selection !== undefined) {
+      this.realtimeSession.session.model_selection = sessionConfig.model_selection;
+
+      // Update connection state
+      const connection = this.inworldApp.connections[this.sessionKey];
+      if (connection) {
+        connection.state.modelSelection = sessionConfig.model_selection;
+        logger.info({ sessionId: this.sessionKey, modelSelection: sessionConfig.model_selection }, `Updated connection.state.modelSelection`);
+      }
+    }
+
+    if (sessionConfig.text_generation_config !== undefined) {
+      this.realtimeSession.session.text_generation_config = sessionConfig.text_generation_config;
+
+      // Update connection state
+      const connection = this.inworldApp.connections[this.sessionKey];
+      if (connection) {
+        connection.state.textGenerationConfig = sessionConfig.text_generation_config;
+        logger.info({ sessionId: this.sessionKey, textGenerationConfig: sessionConfig.text_generation_config }, `Updated connection.state.textGenerationConfig`);
+      }
+    }
+
     // Send session.updated event
     this.send(RealtimeEventFactory.sessionUpdated(this.realtimeSession.session));
   }
@@ -307,7 +340,7 @@ export class RealtimeSessionManager {
     this.send(
       RealtimeEventFactory.conversationItemDone(item, event.previous_item_id),
     );
-    
+
     // Add to conversation state so LLM is aware of this item
     const connection = this.inworldApp.connections[this.sessionKey];
     if (connection) {
@@ -320,7 +353,7 @@ export class RealtimeSessionManager {
           call_id: functionOutputItem.call_id,
           output: functionOutputItem.output,
         }, 'Function output received');
-        
+
         // Add a system message to inform the LLM that the function was executed
         // The Inworld SDK/Groq combo doesn't properly support 'tool' role with tool_call_id
         // So we use a system message to provide context about the function execution
@@ -329,7 +362,7 @@ export class RealtimeSessionManager {
           content: `[SYSTEM] Function executed. Result: ${functionOutputItem.output}`,
           id: item.id,
         });
-        
+
         logger.info({ sessionId: this.sessionKey }, 'Added function execution result to conversation');
       } else if (item.type === 'message') {
         // Handle message items
@@ -337,7 +370,7 @@ export class RealtimeSessionManager {
         if (messageItem.content && messageItem.content.length > 0) {
           const content = messageItem.content[0];
           let textContent = '';
-          
+
           if (content.type === 'input_text') {
             textContent = content.text || '';
           } else if (content.type === 'text') {
@@ -346,7 +379,7 @@ export class RealtimeSessionManager {
             // Audio inputs should already be handled by STT
             return;
           }
-          
+
           if (textContent) {
             logger.info({
               sessionId: this.sessionKey,
@@ -404,7 +437,7 @@ export class RealtimeSessionManager {
     // Truncate the content part at the specified index
     if (item.content && item.content[event.content_index]) {
       const contentPart = item.content[event.content_index];
-      
+
       // If it's an audio content part, truncate the audio and remove transcript
       if (contentPart.type === 'audio' && contentPart.audio) {
         // Note: In a real implementation, we would need to:
@@ -414,7 +447,7 @@ export class RealtimeSessionManager {
         // 4. Re-encode to base64
         // For now, we'll just remove the transcript to ensure no text is in context that hasn't been heard
         delete contentPart.transcript;
-        
+
         // In a full implementation, we would also truncate the audio data itself
         logger.info({
           sessionId: this.sessionKey,

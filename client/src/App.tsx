@@ -590,6 +590,10 @@ function App() {
           type: 'realtime',
           output_modalities: ['text', 'audio'],
           instructions: agent?.systemPrompt || 'You are a helpful assistant.',
+          model_id: {
+            provider: 'groq',
+            modelName: 'llama-3.3-70b-versatile',
+          },
           audio: {
             input: {
               turn_detection: {

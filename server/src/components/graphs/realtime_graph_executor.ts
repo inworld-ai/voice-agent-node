@@ -4,7 +4,7 @@ import logger from '../../logger';
 import * as RT from '../../types/realtime';
 import { InworldApp } from '../app';
 import { RealtimeEventFactory } from '../realtime/realtime_event_factory';
-import { InworldGraphWrapper } from './graph';
+import { InworldGraphWrapper } from '../graphs/graph';
 import { Connection } from '../../types/index';
 import { convertToPCM16Base64 } from '../audio/audio_utils';
 import { ToolCallInterface } from "@inworld/runtime";
@@ -279,7 +279,7 @@ export class RealtimeGraphExecutor {
             realtimeSession.currentResponse = response;
             this.send(RealtimeEventFactory.responseCreated(response));
           }
-          await this.handleTextOutputStream(stream, realtimeSession.currentResponse!, connection, 'Audio Input');
+          await this.handleTextOutputStream(stream, realtimeSession.currentResponse!, connection, 'Text Input');
         },
         Custom: async (customData: GraphTypes.Custom<any>) => {
           // Handle custom events (transcription, etc)
@@ -292,14 +292,14 @@ export class RealtimeGraphExecutor {
 
             // Skip tool continuation marker - this is an internal marker, not a real transcript
             if (transcript === TOOL_CALL_CONTINUATION_MARKER) {
-              logger.info({ sessionId, interactionId }, 
+              logger.info({ sessionId, interactionId },
                 'Skipping transcription event for tool call continuation marker');
               return;
             }
 
             if (transcript && transcript.trim().length > 0) {
               const itemId = interactionId || uuidv4();
-              
+
               // Check if this is a text input (simulated) - if so, skip transcription events
               // Text inputs already have their conversation item created before being pushed to the graph
               // We check:
@@ -307,12 +307,12 @@ export class RealtimeGraphExecutor {
               // 2. If a conversation item with matching text already exists (text inputs create items first)
               // 3. If the most recent user message matches this transcript (text inputs are processed immediately)
               const existingItem = realtimeSession.conversationItems.find(
-                item => item.id === itemId || 
-                (item.role === 'user' && 
-                 item.content?.[0]?.type === 'input_text' && 
+                item => item.id === itemId ||
+                (item.role === 'user' &&
+                 item.content?.[0]?.type === 'input_text' &&
                  item.content[0].text === transcript)
               );
-              
+
               // Also check the most recent user message (text inputs are typically the last item)
               const lastUserItem = realtimeSession.conversationItems.length > 0
                 ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1]
@@ -324,7 +324,7 @@ export class RealtimeGraphExecutor {
               if (isTextInput || existingItem || isRecentTextInput) {
                 // This is a text input that was already processed
                 // Skip all transcription events since the conversation item already exists
-                logger.info({ sessionId, itemId, transcript: transcript.substring(0, 50) }, 
+                logger.info({ sessionId, itemId, transcript: transcript.substring(0, 50) },
                   `Skipping transcription events for text input (conversation item already exists)`);
                 return;
               }
@@ -971,23 +971,23 @@ export class RealtimeGraphExecutor {
 
     try {
       const connection = this.inworldApp.connections[this.sessionKey];
-      
+
       // Check if this is a tool call continuation (response.create after function_call_output)
       const lastItem = realtimeSession.conversationItems.length > 0
         ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1]
         : null;
-      
+
       const isToolCallContinuation = lastItem?.type === 'function_call_output';
-      
+
       if (isToolCallContinuation) {
         // This is a continuation after a tool call - the tool result is already in connection.state.messages
         // We need to trigger the LLM with the current conversation state
         logger.info({ sessionId: this.sessionKey, callId: lastItem.call_id }, 'Tool call continuation - triggering LLM with tool result');
-        
+
         if (!connection) {
           throw new Error('No connection found for session');
         }
-        
+
         // Trigger the LLM via the audio graph with a tool continuation marker
         // This will be recognized by the graph and processed without adding a new user message
         await this.handleToolCallContinuation(connection, response);
@@ -1042,7 +1042,7 @@ export class RealtimeGraphExecutor {
         // The graph runs continuously and automatically sends response events for each turn
         // DO NOT wait for graph completion - it runs until the stream is ended
         const hasActiveAudioGraph = connection?.currentAudioGraphExecution !== undefined;
-        
+
         if (!hasActiveAudioGraph) {
           // No active graph - text should have been pushed via conversation.item.create first.
           // This is an error condition, as the input will be lost.
@@ -1130,28 +1130,28 @@ export class RealtimeGraphExecutor {
     response: RT.Response,
   ): Promise<void> {
     const realtimeSession = this.sessionManager.getSession();
-    
+
     try {
       // Create a multimodal stream manager for this continuation
       const multimodalStreamManager = new MultimodalStreamManager();
       connection.multimodalStreamManager = multimodalStreamManager;
-      
+
       const session = realtimeSession.session;
-      
+
       // Start the audio graph execution with the stream
       const audioStreamInput = {
         sessionId: this.sessionKey,
         state: connection.state,
         voiceId: connection.state.voiceId || session.audio.output.voice,
       };
-      
+
       // Use the Assembly.AI audio graph
       const graphWrapper = this.inworldApp.graphWithAudioInput;
-      
+
       // Push a special tool continuation marker that the graph nodes will recognize
       // This signals that we're continuing after a tool call and shouldn't add a new user message
       multimodalStreamManager.pushText(TOOL_CALL_CONTINUATION_MARKER);
-      
+
       // Start graph execution and wait for completion
       connection.currentAudioGraphExecution = this.executeAudioGraph({
         sessionId: this.sessionKey,
@@ -1161,9 +1161,9 @@ export class RealtimeGraphExecutor {
         graphWrapper,
         multimodalStreamManager,
       });
-      
+
       await connection.currentAudioGraphExecution;
-      
+
       // Response should have been handled by the audio graph output processing
       // Mark as completed if not already done
       if (!this.isCancelled && realtimeSession.currentResponse?.id === response.id) {

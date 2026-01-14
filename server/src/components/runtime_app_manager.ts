@@ -5,8 +5,6 @@ import { Connection } from '../types/index';
 
 export interface AppConfig {
   graphId?: string;
-  llmModelName?: string;
-  llmProvider?: string;
   voiceId?: string;
   ttsModelId?: string;
   graphVisualizationEnabled?: boolean;
@@ -95,8 +93,6 @@ export class InworldRuntimeAppManager {
 
     const finalConfig: InworldAppConfig = {
       graphId: getStringConfig(configOverrides?.graphId, this.defaultConfig.graphId, undefined),
-      llmModelName: getStringConfig(configOverrides?.llmModelName, this.defaultConfig.llmModelName),
-      llmProvider: getStringConfig(configOverrides?.llmProvider, this.defaultConfig.llmProvider),
       voiceId: getStringConfig(configOverrides?.voiceId, this.defaultConfig.voiceId),
       ttsModelId: getStringConfig(configOverrides?.ttsModelId, this.defaultConfig.ttsModelId),
       graphVisualizationEnabled: getBooleanConfig(configOverrides?.graphVisualizationEnabled, this.defaultConfig.graphVisualizationEnabled, process.env.GRAPH_VISUALIZATION_ENABLED, false),
