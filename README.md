@@ -25,19 +25,20 @@ cd voice-agent-node
 
 ### Step 2: Configure Server Environment Variables
 
-Copy `server/.env-sample` to `server/.env` and fill all required variables. Some variables are optional and can be left empty. In this case default values will be used.
+Copy `server/.env-sample` to `server/.env` and fill in the required variables:
 
-Get your API key from the [Inworld Portal](https://platform.inworld.ai/).
+**Required:**
+- `INWORLD_API_KEY` - Get your API key from the [Inworld Portal](https://platform.inworld.ai/)
+- `ASSEMBLYAI_API_KEY` - Get your API key from [Assembly.AI](https://www.assemblyai.com/) (required for speech-to-text functionality)
 
-### Step 3: Configure Client Environment Variables (Optional)
+See `server/.env-sample` for detailed comments and examples.
 
-The client supports optional environment variables to customize its behavior. Create a `.env` file in the `client` directory if you want to override defaults:
+### Step 3: Configure Client Environment Variables
 
-- `VITE_ENABLE_LATENCY_REPORTING` - Set to `true` to enable latency reporting in the UI (shows latency chart and latency badges on agent messages). Default: `false`
-- `VITE_APP_PORT` - Server port to connect to. Default: `4000`
-- `VITE_APP_LOAD_URL` - Custom load endpoint URL
-- `VITE_APP_UNLOAD_URL` - Custom unload endpoint URL
-- `VITE_APP_SESSION_URL` - Custom session WebSocket URL
+Copy `client/.env-sample` to `client/.env` and fill in the required variables:
+
+**Required:**
+- `VITE_INWORLD_API_KEY` - Get your API key from the [Inworld Portal](https://platform.inworld.ai/)
 
 ### Step 4: Install Dependencies and Run
 
@@ -132,12 +133,18 @@ The server uses **Assembly.AI** as the Speech-to-Text provider, which provides h
 ## Troubleshooting
 
 - If you encounter connection issues, ensure both server and client are running. Server should be running on port 4000 and client can be running on port 3000 or any other port.
-- Check that your API keys are valid and properly set in the `.env` file:
-  - `INWORLD_API_KEY` - Required for Inworld services
-  - `ASSEMBLYAI_API_KEY` - Required for speech-to-text functionality (note: `ASSEMBLYAI_API_KEY`, not `ASSEMBLY_AI_API_KEY`)
+- Check that your API keys are valid and properly set in the `.env` files:
+  - **Server** (`server/.env`): 
+    - `INWORLD_API_KEY` - Required for Inworld services
+    - `ASSEMBLYAI_API_KEY` - Required for speech-to-text functionality (note: `ASSEMBLYAI_API_KEY`, not `ASSEMBLY_AI_API_KEY`)
+  - **Client** (`client/.env`): 
+    - `VITE_INWORLD_API_KEY` - Required for Inworld services
+    - `VITE_REALTIME_API_URL` - WebSocket URL (default: `ws://localhost:4000`)
 - For voice input issues, ensure your browser has microphone permissions.
 - The server uses the OpenAI Realtime API protocol. Ensure your client is sending the correct event types (see [REALTIME_API.md](server/REALTIME_API.md) for details).
-- If you see WebSocket connection errors, verify that the session key is provided in the query string: `ws://localhost:4000/session?key=YOUR_SESSION_KEY`
+- If you see WebSocket connection errors, verify that:
+  - The server is running on the correct port (default: 4000)
+  - If `AUTH_TOKEN` is set in server `.env`, include it in the query string: `ws://localhost:4000/session?token=YOUR_TOKEN`
 
 **Bug Reports**: [GitHub Issues](https://github.com/inworld-ai/voice-agent-node/issues)
 
