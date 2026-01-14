@@ -438,6 +438,43 @@ function App() {
     }
   }, []);
 
+  // Cleanup function to reset chat state - can be called from stopChatting or WebSocket close handler
+  const cleanupChatState = useCallback((shouldCloseConnection: boolean = true) => {
+    // Stop recording if active
+    if (stopRecordingRef.current) {
+      console.log('🛑 Stopping recording');
+      stopRecordingRef.current();
+    }
+
+    // Stop audio playing
+    player.stop();
+
+    // Clear collections (chat history, latency data, transcript buffers)
+    setChatHistory([]);
+    setLatencyData([]);
+    transcriptBuffers.current.clear();
+
+    // Disable flags
+    setChatting(false);
+    setOpen(false);
+
+    // Close connection and clear connection data (only if connection is still open)
+    if (shouldCloseConnection && connection) {
+      // Only close if connection is still open
+      if (connection.readyState === WebSocket.OPEN || connection.readyState === WebSocket.CONNECTING) {
+        connection.close();
+        connection.removeEventListener('open', onOpen);
+        connection.removeEventListener('message', onMessage);
+        connection.removeEventListener('disconnect', onDisconnect);
+      }
+    }
+
+    setConnection(undefined);
+    setAgent(undefined);
+
+    key = '';
+  }, [connection, onDisconnect, onMessage, onOpen]);
+
   const openConnection = useCallback(async () => {
     key = v4();
     // Get configuration including voiceId from selected template
@@ -470,7 +507,9 @@ function App() {
     if (!wsUrl.startsWith('ws://') && !wsUrl.startsWith('wss://')) {
       console.error('❌ Invalid WebSocket URL format:', wsUrl);
       toast.error('Invalid WebSocket URL. Must start with ws:// or wss://');
-      setChatting(false);
+      if (stateRef.current.chatting) {
+        cleanupChatState(false);
+      }
       return;
     }
 
@@ -488,7 +527,9 @@ function App() {
     } catch (error) {
       console.error('❌ Failed to create WebSocket:', error);
       toast.error(`Failed to create WebSocket: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setChatting(false);
+      if (stateRef.current.chatting) {
+        cleanupChatState(false);
+      }
       return;
     }
 
@@ -498,17 +539,12 @@ function App() {
       console.error('WebSocket readyState:', ws.readyState);
       console.error('WebSocket URL:', wsUrl);
       
-      // Stop recording if active when error occurs
-      if (stopRecordingRef.current) {
-        console.log('🛑 Stopping recording due to WebSocket error');
-        stopRecordingRef.current();
+      // Clean up chat state when error occurs
+      if (stateRef.current.chatting) {
+        cleanupChatState(false);
       }
       
-      // Stop audio playback
-      player.stop();
-      
       toast.error('Connection error. Server may be unavailable.');
-      setChatting(false);
     });
 
     // Add close handler to detect unexpected disconnections
@@ -519,16 +555,15 @@ function App() {
         wasClean: event.wasClean,
       });
       
-      // Stop recording if active when connection closes
-      if (stopRecordingRef.current) {
-        console.log('🛑 Stopping recording due to WebSocket close');
-        stopRecordingRef.current();
+      // Clean up chat state when connection closes (connection is already closed, so don't try to close it again)
+      // This ensures chat history, latency data, and transcript buffers are cleared
+      if (stateRef.current.chatting) {
+        cleanupChatState(false);
       }
       
       if (event.code === 1008) {
         console.error('❌ WebSocket closed: Session not found or invalid');
         toast.error('Session not found. Please try again.');
-        setChatting(false);
       } else if (event.code === 1006) {
         console.error('❌ WebSocket closed abnormally (1006). Possible causes:');
         console.error('  - Network connectivity issues');
@@ -536,33 +571,26 @@ function App() {
         console.error('  - Authentication failed');
         console.error('  - CORS issues');
         toast.error('Connection closed abnormally. Check console for details.');
-        setChatting(false);
       } else if (event.code === 1002) {
         console.error('❌ WebSocket closed: Protocol error (1002)');
         toast.error('Protocol error. Check authentication configuration.');
-        setChatting(false);
       } else if (event.code === 1011) {
         // Server error (e.g., JS Call Timeout)
         console.error('❌ WebSocket closed: Server error (1011)');
         console.error('Reason:', event.reason || 'No reason provided');
         toast.error(event.reason || 'Server error. Connection closed.');
-        setChatting(false);
       } else if (!event.wasClean) {
         console.error(
           '❌ WebSocket closed unexpectedly:',
           `Code: ${event.code}, Reason: ${event.reason || 'No reason provided'}`,
         );
         toast.error(`Connection closed: ${event.reason || `Code ${event.code}`}`);
-        setChatting(false);
       } else {
         // Even if wasClean is true, if we're still in chatting state, we should return to settings
         // This handles cases where the server cleanly closes the connection (e.g., timeout, server shutdown)
         if (stateRef.current.chatting) {
           console.log('🔌 WebSocket closed cleanly, returning to settings');
           console.log('Close code:', event.code, 'Reason:', event.reason || 'No reason provided');
-          
-          // Stop audio playback
-          player.stop();
           
           // Show appropriate message based on close code
           if (event.code === 1000) {
@@ -571,8 +599,6 @@ function App() {
           } else {
             toast.error(event.reason || 'Connection closed.');
           }
-          
-          setChatting(false);
         }
       }
     });
@@ -620,7 +646,9 @@ function App() {
         console.error('❌ WebSocket is not open, cannot send session.update');
         console.error('ReadyState:', ws.readyState);
         toast.error('Connection is not ready. Please try again.');
-        setChatting(false);
+        if (stateRef.current.chatting) {
+          cleanupChatState(false);
+        }
         return;
       }
       
@@ -630,16 +658,12 @@ function App() {
       } catch (error) {
         console.error('❌ Failed to send session.update:', error);
         
-        // Stop recording if active
-        if (stopRecordingRef.current) {
-          stopRecordingRef.current();
+        // Clean up chat state when session.update fails
+        if (stateRef.current.chatting) {
+          cleanupChatState(false);
         }
         
-        // Stop audio playback
-        player.stop();
-        
         toast.error('Failed to send session configuration. Connection may be lost.');
-        setChatting(false);
         return;
       }
       
@@ -654,41 +678,11 @@ function App() {
     setConnection(ws);
     ws.addEventListener('message', onMessage);
     ws.addEventListener('disconnect', onDisconnect);
-  }, [formMethods, onDisconnect, onMessage, onOpen]);
+  }, [formMethods, onDisconnect, onMessage, onOpen, cleanupChatState]);
 
   const stopChatting = useCallback(async () => {
-    // Stop recording first (before closing connection)
-    if (stopRecordingRef.current) {
-      console.log('🛑 Stopping recording before closing connection');
-      stopRecordingRef.current();
-    }
-
-    // Disable flags
-    setChatting(false);
-    setOpen(false);
-
-    // Stop audio playing
-    player.stop();
-
-    // Clear collections (only when fully exiting to config)
-    setChatHistory([]);
-    setLatencyData([]);
-    transcriptBuffers.current.clear();
-
-    // Close connection and clear connection data
-    if (connection) {
-      connection.close();
-      connection.removeEventListener('open', onOpen);
-      connection.removeEventListener('message', onMessage);
-      connection.removeEventListener('disconnect', onDisconnect);
-      // Note: error and close handlers are removed automatically when connection closes
-    }
-
-    setConnection(undefined);
-    setAgent(undefined);
-
-    key = '';
-  }, [connection, onDisconnect, onMessage, onOpen]);
+    cleanupChatState(true);
+  }, [cleanupChatState]);
 
   const resetForm = useCallback(() => {
     formMethods.reset({
