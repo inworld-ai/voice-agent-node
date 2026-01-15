@@ -89,15 +89,14 @@ app.post(
   inworldApp.unload.bind(inworldApp),
 );
 
-// Character generation endpoint
+// Character generation endpoint (uses Inworld's LLM infrastructure)
 app.post(
   '/generate-character',
   body('description').trim().isLength({ min: 1 }),
-  body('model').optional().isIn(['openai', 'claude']),
   async (req, res) => {
     try {
-      const { description, model = 'openai' } = req.body;
-      const result = await generateCharacterPrompt(description, model);
+      const { description } = req.body;
+      const result = await generateCharacterPrompt(description);
       res.json(result);
     } catch (error: any) {
       console.error('Character generation error:', error);
