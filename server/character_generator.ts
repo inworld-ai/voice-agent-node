@@ -91,13 +91,26 @@ export async function generateCharacterPrompt(
     
     // Collect the full response from the stream
     let responseText = '';
-    for await (const chunk of outputStream) {
-      if (typeof chunk === 'string') {
-        responseText += chunk;
-      } else if (chunk?.text) {
-        responseText += chunk.text;
-      } else if (chunk?.content) {
-        responseText += chunk.content;
+    for await (const result of outputStream) {
+      // Handle the graph output stream response
+      // The result contains data from the LLM node
+      const data = (result as any)?.data;
+      if (typeof data === 'string') {
+        responseText += data;
+      } else if (data?.text) {
+        responseText += data.text;
+      } else if (data?.content) {
+        responseText += data.content;
+      } else if (typeof result === 'string') {
+        responseText += result;
+      } else {
+        // Try to extract text from any nested structure
+        const anyResult = result as any;
+        if (anyResult?.text) {
+          responseText += anyResult.text;
+        } else if (anyResult?.content) {
+          responseText += anyResult.content;
+        }
       }
     }
 
