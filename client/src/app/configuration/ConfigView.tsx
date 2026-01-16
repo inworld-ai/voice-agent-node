@@ -874,8 +874,15 @@ export const ConfigView = (props: ConfigViewProps) => {
                         <Select
                           size="small"
                           value={selectedPresetVoice}
-                          onChange={(e) => setSelectedPresetVoice(e.target.value)}
+                          onChange={(e) => {
+                          setSelectedPresetVoice(e.target.value);
+                          setVoiceOption('preset'); // Auto-select preset option when dropdown is used
+                        }}
                           disabled={voiceOption !== 'preset' || isGenerating || isCloning}
+                          renderValue={(value) => {
+                            const voice = AVAILABLE_VOICES.find(v => v.voiceId === value);
+                            return voice?.displayName || value;
+                          }}
                           sx={{
                             minWidth: 120,
                             fontSize: '13px',
@@ -886,16 +893,11 @@ export const ConfigView = (props: ConfigViewProps) => {
                           }}
                         >
                           {AVAILABLE_VOICES.map((voice) => (
-                            <Tooltip
-                              key={voice.voiceId}
-                              title={voice.description}
-                              placement="right"
-                              arrow
-                            >
-                              <MenuItem value={voice.voiceId}>
-                                {voice.displayName}
-                              </MenuItem>
-                            </Tooltip>
+                            <MenuItem key={voice.voiceId} value={voice.voiceId}>
+                              <Tooltip title={voice.description} placement="right" arrow>
+                                <span style={{ width: '100%', display: 'block' }}>{voice.displayName}</span>
+                              </Tooltip>
+                            </MenuItem>
                           ))}
                         </Select>
                       </Box>
