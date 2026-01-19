@@ -157,6 +157,14 @@ export class MessageHandler {
       throw new Error(`Failed to get connection for sessionId:${sessionId}`);
     }
 
+    // Log state for debugging
+    console.log(`[Session ${sessionId}] Executing graph with state:`, {
+      messageCount: connection.state.messages?.length,
+      systemPromptLength: connection.state.messages?.[0]?.content?.length,
+      voiceId: connection.state.voiceId,
+      agentName: connection.state.agent?.name,
+    });
+
     const { outputStream } = await graphWrapper.graph.start(input, {
       dataStoreContent: {
         sessionId: input.sessionId,
@@ -303,6 +311,14 @@ export class MessageHandler {
     // Log result type for debugging
     const resultType = result?.data?.constructor?.name || typeof result?.data;
     console.log(`[Session ${sessionId}] Processing result type: ${resultType}`);
+
+    // Log detailed error info if this is a GraphError
+    if (result?.isGraphError && result.isGraphError()) {
+      console.error(`[Session ${sessionId}] *** GRAPH ERROR DETAILS ***`);
+      console.error(`  Message: ${result?.data?.message || 'No message'}`);
+      console.error(`  Code: ${result?.data?.code || 'No code'}`);
+      console.error(`  Data:`, JSON.stringify(result?.data, null, 2));
+    }
 
     try {
       await result.processResponse({

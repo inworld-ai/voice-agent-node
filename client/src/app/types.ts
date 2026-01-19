@@ -1,17 +1,13 @@
 export type STTService = 'assemblyai';
 
-// Voice type definition used by the voice selector
-export type Voice = {
-  voiceId: string;
-  displayName: string;
-  description: string;
-  languages: string[];
-};
+// Re-export Voice type from shared constants
+export type { Voice } from '../../../../constants';
 
 export type ConfigurationSession = {
   agent?: ConfigurationAgent;
   user?: ConfigurationUser;
   voiceId?: string;
+  voiceName?: string; // Display name for custom cloned voice
   sttService?: STTService;
 };
 
@@ -36,6 +32,7 @@ export type Configuration = {
   scene?: ConfigurationScene;
   user?: ConfigurationUser;
   voiceId?: string;
+  voiceName?: string; // Display name for custom cloned voice
   sttService?: STTService;
 };
 

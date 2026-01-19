@@ -13,6 +13,7 @@ This application demonstrates a simple chat interface with an AI agent that can 
 - Node.js 20 or higher
 - Assembly.AI API key (required for speech-to-text functionality)
 - Inworld API key (required)
+- For voice cloning: API key must have write permissions and `INWORLD_WORKSPACE` must be set
 
 ## Get Started
 
@@ -163,6 +164,10 @@ The server uses **Assembly.AI** as the Speech-to-Text provider, which provides h
   - `INWORLD_API_KEY` - Required for Inworld services
   - `ASSEMBLY_AI_API_KEY` - Required for speech-to-text functionality
 - For voice input issues, ensure your browser has microphone permissions.
+- **Voice Cloning Issues**:
+  - Ensure your `INWORLD_API_KEY` has write permissions in Inworld Studio
+  - Set `INWORLD_WORKSPACE` in your `.env` file to your Inworld workspace name
+  - Voice cloning will fail with an error if the workspace is not configured
 
 **Bug Reports**: [GitHub Issues](https://github.com/inworld-ai/voice-agent-node/issues)
 
