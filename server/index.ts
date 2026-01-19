@@ -118,14 +118,19 @@ app.post(
     try {
       const { audioData, displayName, langCode = 'EN_US' } = req.body;
 
-      // Use Portal API key if available, otherwise fall back to regular API key
-      const portalApiKey = process.env.INWORLD_PORTAL_API_KEY || process.env.INWORLD_API_KEY;
-      if (!portalApiKey) {
+      // Use INWORLD_API_KEY (must have write permissions for voice cloning)
+      const apiKey = process.env.INWORLD_API_KEY;
+      if (!apiKey) {
         return res.status(500).json({ error: 'INWORLD_API_KEY not set' });
       }
 
-      // Get workspace from environment or use default
-      const workspace = process.env.INWORLD_WORKSPACE || 'voice_agent_demo';
+      // Workspace is required for voice cloning (no default)
+      const workspace = process.env.INWORLD_WORKSPACE;
+      if (!workspace || workspace.trim() === '') {
+        return res.status(500).json({ 
+          error: 'INWORLD_WORKSPACE is required for voice cloning. Please set it in your .env file.' 
+        });
+      }
       const parent = `workspaces/${workspace}`;
 
       console.log(`🎤 Cloning voice: "${displayName}" for workspace: ${workspace}`);
@@ -133,7 +138,7 @@ app.post(
       const cloneResponse = await fetch(`https://api.inworld.ai/voices/v1/${parent}/voices:clone`, {
         method: 'POST',
         headers: {
-          'Authorization': `Basic ${portalApiKey}`,
+          'Authorization': `Basic ${apiKey}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
