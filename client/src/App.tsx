@@ -542,7 +542,7 @@ function App() {
           },
         }}
       />
-      <Layout>{initialized ? content : ''}</Layout>
+      <Layout chatMode={chatting}>{initialized ? content : ''}</Layout>
     </FormProvider>
   );
 }

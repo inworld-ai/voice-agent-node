@@ -190,19 +190,6 @@ export function Chat(props: ChatProps) {
 
   return (
     <>
-      {/* Full-width background matching ConfigView */}
-      <Box
-        sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          backgroundColor: '#FAF7F5',
-          zIndex: -1,
-        }}
-      />
-
       {/* Latency Chart */}
       {config.ENABLE_LATENCY_REPORTING && (
         <LatencyChart latencyData={latencyData} />
@@ -212,8 +199,9 @@ export function Chat(props: ChatProps) {
         sx={{
           display: 'flex',
           flexDirection: 'column',
-          height: '100vh',
+          height: '100%',
           position: 'relative',
+          backgroundColor: '#FAF7F5',
         }}
       >
         {/* Header */}
@@ -271,7 +259,7 @@ export function Chat(props: ChatProps) {
           <Box
             sx={{
               position: 'absolute',
-              top: '50%',
+              top: '35%',
               left: '50%',
               transform: 'translate(-50%, -50%)',
               zIndex: 10,
