@@ -1,18 +1,18 @@
-import './App.css';
+'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { FormProvider, useForm } from 'react-hook-form';
 import toast, { Toaster } from 'react-hot-toast';
 import { v4 } from 'uuid';
 
-import { Chat } from './app/chat/Chat';
-import { Layout } from './app/components/Layout';
-import { ConfigView } from './app/configuration/ConfigView';
+import { Chat } from './chat/Chat';
+import { Layout } from './components/Layout';
+import { ConfigView } from './configuration/ConfigView';
 import {
   get as getConfiguration,
   save as saveConfiguration,
-} from './app/helpers/configuration';
-import { Player } from './app/sound/Player';
+} from './helpers/configuration';
+import { Player } from './sound/Player';
 import {
   Agent,
   CHAT_HISTORY_TYPE,
@@ -20,9 +20,9 @@ import {
   Configuration,
   HistoryItemActor,
   InteractionLatency,
-} from './app/types';
-import { config } from './config';
-import * as defaults from './defaults';
+} from './types';
+import { config } from '../config';
+import * as defaults from '../defaults';
 
 interface CurrentContext {
   agent?: Agent;
@@ -63,7 +63,7 @@ function formatAudioTranscript(text: string, isFinal: boolean = true): string {
   return formatted;
 }
 
-function App() {
+export default function HomePage() {
   const formMethods = useForm<Configuration>();
 
   const [open, setOpen] = useState(false);
@@ -552,13 +552,21 @@ function App() {
 
     const wsUrl = `${config.REALTIME_API_URL}/session?key=${key}&protocol=realtime`;
     
+    // Get API key - prefer direct env access (set by next.config.mjs) over config
+    // next.config.mjs exposes INWORLD_API_KEY as NEXT_PUBLIC_INWORLD_API_KEY
+    const apiKey = process.env.NEXT_PUBLIC_INWORLD_API_KEY || config.INWORLD_API_KEY || '';
+
     // Always send authentication if API key is configured
     // This ensures the server always has credentials for Inworld API calls
-    const shouldSendAuth = config.INWORLD_API_KEY && config.INWORLD_API_KEY.trim();
+    const shouldSendAuth = apiKey && apiKey.trim();
+    
+    if (!shouldSendAuth) {
+      console.error('❌ No API key found! Check that INWORLD_API_KEY is set in .env.local and next.config.mjs is exposing it.');
+    }
     
     // Remove all base64 padding (=) characters as they're invalid in WebSocket subprotocols
     const protocols = shouldSendAuth
-      ? [`basic_${config.INWORLD_API_KEY.replace(/=/g, '')}`]
+      ? [`basic_${apiKey.replace(/=/g, '')}`]
       : undefined;
     
     console.log('🔌 Connecting to:', wsUrl);
@@ -809,5 +817,3 @@ function App() {
     </FormProvider>
   );
 }
-
-export default App;

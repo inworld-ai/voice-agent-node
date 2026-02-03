@@ -13,6 +13,7 @@ This application demonstrates a simple chat interface with an AI agent that can 
 - Node.js 20 or higher
 - Assembly.AI API key (required for speech-to-text functionality)
 - Inworld API key (required)
+- For voice cloning: API key must have write permissions and `INWORLD_WORKSPACE` must be set
 
 ## Get Started
 
@@ -35,31 +36,34 @@ See `server/.env-sample` for detailed comments and examples.
 
 ### Step 3: Configure Client Environment Variables
 
-Copy `client/.env-sample` to `client/.env` and fill in the required variables:
+Copy `client/.env.local.example` to `client/.env.local` and fill in the required variables:
 
 **Required:**
-- `VITE_INWORLD_API_KEY` - Get your API key from the [Inworld Portal](https://platform.inworld.ai/)
+- `INWORLD_API_KEY` - Single API key used for both client and server (automatically exposed to client via Next.js config)
+- `INWORLD_WORKSPACE` - Your Inworld workspace name (required for voice cloning, automatically exposed to client)
+- `CHARACTER_GENERATION_LLM_PROVIDER` - LLM provider for character generation (default: `groq`)
+- `CHARACTER_GENERATION_LLM_MODEL_NAME` - Model name for character generation (default: `llama-3.3-70b-versatile`)
+
+See `client/.env.local.example` for detailed comments and examples.
 
 ### Step 4: Install Dependencies and Run
 
 Install dependencies for both server and client:
 
 ```bash
-# Install server dependencies
+# Terminal 1: Start the Realtime API Server
 cd server
 npm install
-
-# Start the server
 npm start
 ```
 
 The server will start on port 4000.
 
 ```bash
-# Install client dependencies
+# Terminal 2: Start the Next.js Client
 cd ../client
 npm install
-npm start
+npm run dev
 ```
 
 The client will start on port 3000 and should automatically open in your default browser. It's possible that port 3000 is already in use, so the next available port will be used.
@@ -100,15 +104,21 @@ voice-agent-node/
 │   ├── REALTIME_API.md             # OpenAI Realtime API documentation
 │   ├── .env-sample                 # Environment variables template
 │   └── package.json
-├── client/                          # Frontend React application
+├── client/                          # Frontend Next.js application
 │   ├── src/
 │   │   ├── app/
+│   │   │   ├── api/                # Next.js API routes
+│   │   │   │   └── generate-character/  # Character generation endpoint
 │   │   │   ├── chat/               # Chat UI components
 │   │   │   ├── configuration/     # Agent configuration UI
-│   │   │   └── components/        # Shared components
-│   │   ├── App.tsx
+│   │   │   ├── components/         # Shared components
+│   │   │   ├── layout.tsx         # Root layout
+│   │   │   └── page.tsx           # Main page
+│   │   ├── lib/                    # Server-side utilities
+│   │   │   ├── characterGenerator.ts  # Character generation logic
+│   │   │   └── prompts/           # Prompt templates
 │   │   └── config.ts
-│   ├── .env-sample
+│   ├── .env.local.example
 │   └── package.json
 └── LICENSE
 ```
@@ -137,14 +147,21 @@ The server uses **Assembly.AI** as the Speech-to-Text provider, which provides h
   - **Server** (`server/.env`): 
     - `INWORLD_API_KEY` - Required for Inworld services
     - `ASSEMBLYAI_API_KEY` - Required for speech-to-text functionality (note: `ASSEMBLYAI_API_KEY`, not `ASSEMBLY_AI_API_KEY`)
-  - **Client** (`client/.env`): 
-    - `VITE_INWORLD_API_KEY` - Required for Inworld services
-    - `VITE_REALTIME_API_URL` - WebSocket URL (default: `ws://localhost:4000`)
+  - **Client** (`client/.env.local`): 
+    - `INWORLD_API_KEY` - Single API key for all Inworld services (automatically exposed to client)
+    - `INWORLD_WORKSPACE` - Required for voice cloning (automatically exposed to client)
+    - `CHARACTER_GENERATION_LLM_PROVIDER` - LLM provider for character generation (default: `groq`)
+    - `CHARACTER_GENERATION_LLM_MODEL_NAME` - Model name for character generation (default: `llama-3.3-70b-versatile`)
+    - `NEXT_PUBLIC_REALTIME_API_URL` - WebSocket URL (default: `ws://localhost:4000`)
 - For voice input issues, ensure your browser has microphone permissions.
 - The server uses the OpenAI Realtime API protocol. Ensure your client is sending the correct event types (see [REALTIME_API.md](server/REALTIME_API.md) for details).
 - If you see WebSocket connection errors, verify that:
   - The server is running on the correct port (default: 4000)
   - If `AUTH_TOKEN` is set in server `.env`, include it in the query string: `ws://localhost:4000/session?token=YOUR_TOKEN`
+- **Voice Cloning Issues**:
+  - Ensure your `INWORLD_API_KEY` has write permissions in Inworld Studio
+  - Set `INWORLD_WORKSPACE` in your `.env` file to your Inworld workspace name
+  - Voice cloning will fail with an error if the workspace is not configured
 
 **Bug Reports**: [GitHub Issues](https://github.com/inworld-ai/voice-agent-node/issues)
 

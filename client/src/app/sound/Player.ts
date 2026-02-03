@@ -58,7 +58,12 @@ export class Player {
     this.nextStartTime = 0;
   }
 
-  addToQueue(packet: QueueItem): void {
+  async addToQueue(packet: QueueItem): Promise<void> {
+    // Ensure audio context is initialized before adding to queue
+    if (!this.audioContext) {
+      await this.preparePlayer();
+    }
+    
     this.audioPacketQueue.push(packet);
     if (!this.isPlaying) {
       this.playQueue();
@@ -94,6 +99,17 @@ export class Player {
   };
 
   private async playAudioChunk(base64Chunk: string): Promise<void> {
+    // Ensure audio context is initialized
+    if (!this.audioContext) {
+      await this.preparePlayer();
+    }
+    
+    // Double-check after initialization
+    if (!this.audioContext) {
+      console.error('Failed to initialize AudioContext');
+      return;
+    }
+    
     try {
       const binaryString = atob(base64Chunk);
       const bytes = new Uint8Array(binaryString.length);

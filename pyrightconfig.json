@@ -1,0 +1,10 @@
+{
+  "exclude": [
+    "**/node_modules",
+    "**/dist",
+    "**/build",
+    "**/.env*",
+    "**/.env-sample",
+    "**/.env.local.example"
+  ]
+}

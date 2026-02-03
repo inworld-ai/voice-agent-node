@@ -19,5 +19,7 @@
       "@inworld/runtime/primitives/*": ["./node_modules/@inworld/runtime/build/primitives/*/index"],
       "@inworld/runtime/telemetry": ["./node_modules/@inworld/runtime/build/telemetry/export"]
     }
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "components", "index.ts", "prompts"]
 }

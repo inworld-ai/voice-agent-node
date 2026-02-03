@@ -192,6 +192,37 @@ export const History = (props: HistoryProps) => {
             </span>
           );
         }
+        // Style cancelled messages - replace trailing punctuation with "..." to indicate interruption
+        if (message.isCancelled) {
+          const displayText = message.text || '(Cancelled)';
+          let finalText = displayText.trim();
+          
+          // If already ends with "...", keep it
+          if (finalText.endsWith('...')) {
+            // Already has "...", keep as is
+          } else {
+            // Check if last character is a letter (a-z, A-Z)
+            const lastChar = finalText[finalText.length - 1];
+            const isLastCharLetter = /[a-zA-Z]/.test(lastChar);
+            
+            if (isLastCharLetter) {
+              // Last character is a letter, append "..."
+              finalText = `${finalText}...`;
+            } else {
+              // Last character is a symbol (punctuation, etc.), replace it with "..."
+              finalText = finalText.slice(0, -1) + '...';
+            }
+          }
+          
+          return (
+            <span style={{ 
+              opacity: 0.7,
+              fontStyle: 'italic'
+            }}>
+              {finalText}
+            </span>
+          );
+        }
         return message.text;
     }
   };

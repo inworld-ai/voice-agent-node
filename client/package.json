@@ -1,17 +1,21 @@
 {
   "name": "client",
+  "version": "0.1.0",
+  "private": true,
   "license": "SEE LICENSE IN LICENSE.md and LICENSE-CPP-BINARIES.md",
   "scripts": {
-    "start": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
     "@emotion/react": "^11.14.0",
     "@emotion/styled": "^11.14.0",
+    "@inworld/runtime": "https://assets.inworld.ai/node-packages/inworld-runtime-1.0.0.tgz",
     "@mui/icons-material": "^7.0.1",
-    "@mui/material": "^7.0.1",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@mui/material": "^7.0.0",
+    "next": "^16.1.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.55.0",
@@ -20,24 +24,11 @@
     "wav-decoder": "^1.3.0"
   },
   "devDependencies": {
+    "@types/node": "^22.14.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.1",
     "@types/uuid": "^10.0.0",
-    "typescript": "^5.8.3",
-    "vite": "^6.4.1",
-    "vite-tsconfig-paths": "^5.1.4"
-  },
-  "browserslist": {
-    "production": [
-      ">0.2%",
-      "not dead",
-      "not op_mini all"
-    ],
-    "development": [
-      "last 1 chrome version",
-      "last 1 firefox version",
-      "last 1 safari version"
-    ]
+    "typescript": "^5.8.3"
   },
   "engines": {
     "node": ">=20.0.0"

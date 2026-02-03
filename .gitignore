@@ -54,3 +54,6 @@ server/cloudbuild.yaml
 client/Dockerfile
 client/cloudbuild.yaml
 client/nginx.conf
+
+# Next.js
+.next/
