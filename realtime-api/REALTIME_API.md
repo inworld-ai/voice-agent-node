@@ -1,0 +1,372 @@
+# OpenAI Realtime API Implementation
+
+This server now supports the OpenAI Realtime API protocol for WebSocket-based real-time voice and audio interactions.
+
+## Protocol
+
+This server uses the OpenAI Realtime API protocol for all WebSocket connections. Connect to the WebSocket endpoint:
+
+```
+ws://YOUR_API_HOST:PORT/session?key=YOUR_SESSION_KEY
+```
+
+## Connection Flow
+
+
+### 1. Connect via WebSocket
+
+Connect to the WebSocket endpoint:
+
+```javascript
+const ws = new WebSocket('ws://YOUR_API_HOST:PORT/session?key=YOUR_SESSION_KEY');
+
+ws.onopen = () => {
+  console.log('Connected');
+  handleOpen();
+};
+
+ws.onmessage = (event) => this.handleMessage(event);
+ws.onerror = (error) => this.handleError(error);
+ws.onclose = () => this.handleClose();
+
+```
+
+### 2. Send session.update Event
+
+You should send a session.update Event when the websocket opens, just like when you are using OpenAI API.
+
+```javascript
+const sessionUpdate = {
+      type: 'session.update',
+      session: {
+        type: 'realtime',  // Required by OpenAI API
+        output_modalities: modalities,
+        instructions: instructions,
+        tools: tools,
+        tool_choice: toolChoice,
+        model_id: { // Defaults to 'google' / 'gemini-2.5-flash' if not provided
+          provider: 'openai',  // LLM provider (e.g., 'openai', 'anthropic', 'google')
+          modelName: 'gpt-4o', // Specific model name
+        },
+        model_selection: {
+          ignore: [  // Optional: Models to exclude from routing
+            { provider: 'openai', modelName: 'gpt-3.5-turbo' }
+          ],
+          models: [  // Optional: Preferred models for routing
+            { provider: 'openai', modelName: 'gpt-4o' },
+            { provider: 'anthropic', modelName: 'claude-3-sonnet' }
+          ],
+          sort: [  // Optional: Sort preferences for model selection
+            { direction: 'SORT_DIRECTION_ASCENDING', metric: 'SORT_METRIC_LATENCY' },
+          ]
+        },
+        audio: {
+          input: {
+            turn_detection: {
+              type: 'semantic_vad',
+              eagerness: eagerness,
+              create_response: true,
+              interrupt_response: false,
+            },
+            transcription: {
+              model: 'gpt-4o-mini-transcribe',
+            },
+          },
+          output: {
+            voice: voice,  // Selected voice from dropdown
+          },
+        },
+      },
+    };
+```
+
+You will then be able to send Client Events and receive responses from the server.
+
+### Model Selection and Routing
+
+The session configuration supports advanced model selection and routing through two key fields:
+
+- **`model_id`**: Specifies the primary LLM provider and model to use for responses
+  - `provider`: The LLM provider (e.g., 'openai', 'anthropic', 'google')
+  - `modelName`: The specific model name within that provider
+
+- **`model_selection`**: Controls multi-model routing behavior
+  - `ignore`: Array of provider/model combinations to exclude from routing
+  - `models`: Array of preferred models for load balancing and fallback
+  - `sort`: Array of sorting preferences by metric and direction
+
+When `model_selection` is configured, the system can automatically route requests across multiple models based on availability, performance, and your preferences. If routing fails, the system will fall back to the model provided by `model_id`.
+
+You can supply multiple metrics in the sort array to break ties. Supported metrics: `SORT_METRIC_PRICE`, `SORT_METRIC_LATENCY`, `SORT_METRIC_THROUGHPUT`, `SORT_METRIC_INTELLIGENCE`, `SORT_METRIC_MATH`, `SORT_METRIC_CODING` with sorting directions set to `SORT_DIRECTION_DESCENDING` or `SORT_DIRECTION_ASCENDING`.
+
+## Client Events
+
+### Update Session Configuration
+
+We support partial update to session such as:
+
+```javascript
+ws.send(JSON.stringify({
+  type: 'session.update',
+  session: {
+    instructions: 'You are a friendly assistant',
+    voice: 'Hades',
+    temperature: 0.7
+  }
+}));
+```
+
+### Send Audio Input
+
+The Realtime API uses PCM16 audio at 24kHz sample rate.
+
+```javascript
+// Append audio to input buffer
+ws.send(JSON.stringify({
+  type: 'input_audio_buffer.append',
+  audio: base64AudioData  // base64-encoded PCM16 audio at 24kHz
+}));
+
+// Manually commit the audio buffer (not needed with server VAD)
+ws.send(JSON.stringify({
+  type: 'input_audio_buffer.commit'
+}));
+
+// Clear the audio buffer
+ws.send(JSON.stringify({
+  type: 'input_audio_buffer.clear'
+}));
+```
+
+### Create a Text Message
+
+```javascript
+ws.send(JSON.stringify({
+  type: 'conversation.item.create',
+  item: {
+    type: 'message',
+    role: 'user',
+    content: [
+      {
+        type: 'input_text',
+        text: 'Hello, how are you?'
+      }
+    ]
+  }
+}));
+
+// Trigger a response
+ws.send(JSON.stringify({
+  type: 'response.create'
+}));
+```
+
+### Cancel a Response
+
+```javascript
+ws.send(JSON.stringify({
+  type: 'response.cancel'
+}));
+```
+
+### Delete / Retrieve a Response via Item ID
+
+```javascript
+ws.send(JSON.stringify({
+    type: 'conversation.item.delete',
+    item_id: itemId,
+}));
+```
+
+```javascript
+ws.send(JSON.stringify({
+    type: 'conversation.item.retrieve',
+    item_id: itemId,
+}));
+```
+
+The item id will be generated by the server in the corresponding event sent back (such as `response.created`).
+
+We have covered all client events available in OpenAI Websocket Protocol, except for `conversation.item.truncate`. 
+
+## Server Events
+
+The server will send various events during the conversation:
+
+### Audio Response Flow
+
+Here's a sequence of events that will be sent back upon the server receiving audio buffer commits.
+
+1. `response.created` - Response generation started
+2. `response.output_item.added` - Output item created
+3. `response.content_part.added` - Content part (audio) added
+4. `response.audio_transcript.delta` - Transcript chunks (streaming)
+5. `response.audio.delta` - Audio chunks (streaming, base64-encoded WAV)
+6. `response.audio_transcript.done` - Transcript complete
+7. `response.audio.done` - Audio complete
+8. `response.content_part.done` - Content part complete
+9. `response.output_item.done` - Output item complete
+10. `response.done` - Response complete
+
+Refer to our API Reference for contents of such events.
+
+### Voice Activity Detection (VAD) Events
+
+When server VAD is enabled (default), instead of buffer commits, the server will decide when to create the conversation item.
+
+As such, events that informs the client will be prepended to the above flow.
+
+1. `input_audio_buffer.speech_started` - Speech detected
+2. `input_audio_buffer.speech_stopped` - Speech ended
+3. `input_audio_buffer.committed` - Audio buffer committed
+4. `conversation.item.created` - User message item created
+5. Response flow (see above)
+
+## Audio Format
+
+- **Input**: PCM16, 24kHz, mono, base64-encoded
+- **Output**: WAV format, base64-encoded (contains PCM16 at 24kHz)
+
+## Example: Simple Audio Conversation
+
+```javascript
+const ws = new WebSocket('ws://localhost:4000/session?key=my-session');
+
+ws.onmessage = (event) => {
+  const msg = JSON.parse(event.data);
+
+  switch (msg.type) {
+    case 'session.created':
+      console.log('Session ready');
+      // Start sending audio
+      break;
+
+    case 'input_audio_buffer.speech_started':
+      console.log('User started speaking');
+      break;
+
+    case 'input_audio_buffer.speech_stopped':
+      console.log('User stopped speaking');
+      break;
+
+    case 'response.audio.delta':
+      // Decode and play audio
+      const audioBuffer = Buffer.from(msg.delta, 'base64');
+      playAudio(audioBuffer);
+      break;
+
+    case 'response.audio_transcript.delta':
+      console.log('Assistant:', msg.delta);
+      break;
+
+    case 'response.done':
+      console.log('Response complete');
+      break;
+
+    case 'error':
+      console.error('Error:', msg.error);
+      break;
+  }
+};
+
+// Send audio chunks
+function sendAudioChunk(pcm16Data) {
+  ws.send(JSON.stringify({
+    type: 'input_audio_buffer.append',
+    audio: pcm16Data.toString('base64')
+  }));
+}
+```
+
+## Configuration
+
+### Turn Detection (Voice Activity Detection)
+
+By default, semantic VAD is enabled with these settings:
+
+- **type**: `'semantic_vad'` (default)
+- **eagerness**: `'medium'` (can be `'low'`, `'medium'`, `'high'`, or `'auto'`)
+- **create_response**: `true` (automatically create response when speech ends)
+- **interrupt_response**: `true` (allow interrupting ongoing responses)
+
+The eagerness level controls how quickly the server detects the end of speech:
+- **`'low'`**: Very patient, allows long thinking pauses (best for complex inquiries)
+- **`'medium'`**: Balanced, natural conversation flow (default, best for customer support)
+- **`'high'`**: Very responsive, quick responses (best for rapid Q&A, agent assist)
+
+You can update these settings using `session.update`:
+
+```javascript
+// Update eagerness (semantic_vad - recommended)
+ws.send(JSON.stringify({
+  type: 'session.update',
+  session: {
+    audio: {
+      input: {
+        turn_detection: {
+          type: 'semantic_vad',
+          eagerness: 'high',  // or 'low', 'medium', 'high', 'auto'
+          create_response: true,
+          interrupt_response: false,
+        }
+      }
+    }
+  }
+}));
+
+// Or use server_vad with manual threshold settings
+ws.send(JSON.stringify({
+  type: 'session.update',
+  session: {
+    audio: {
+      input: {
+        turn_detection: {
+          type: 'server_vad',
+          threshold: 0.7,
+          silence_duration_ms: 800,
+          prefix_padding_ms: 300,
+          create_response: true,
+        }
+      }
+    }
+  }
+}));
+```
+
+To disable turn detection:
+
+```javascript
+ws.send(JSON.stringify({
+  type: 'session.update',
+  session: {
+    turn_detection: null
+  }
+}));
+```
+
+## Error Handling
+
+Errors are sent as `error` events:
+
+```json
+{
+  "event_id": "evt_789",
+  "type": "error",
+  "error": {
+    "type": "invalid_request_error",
+    "code": "invalid_event",
+    "message": "Input audio buffer is empty",
+    "param": null,
+    "event_id": "evt_123"
+  }
+}
+```
+
+## Differences from OpenAI's Implementation
+
+This implementation provides compatibility with the OpenAI Realtime API protocol while using different backend services:
+
+- Uses custom LLM and TTS models (configured via environment variables)
+- Audio processing handled by Inworld Runtime graphs
+- **Enhanced model selection**: Supports `model_id` and `model_selection` fields for multi-model routing and load balancing
+- Some advanced features (like function calling) may have different behavior

@@ -1,0 +1,44 @@
+{
+  "name": "app",
+  "version": "0.1.0",
+  "private": true,
+  "license": "SEE LICENSE IN LICENSE.md and LICENSE-CPP-BINARIES.md",
+  "scripts": {
+    "dev": "next dev",
+    "dev:app": "next dev",
+    "dev:api": "npm run start --workspace=realtime-api",
+    "dev:all": "concurrently \"npm run dev:api\" \"npm run dev:app\" --names \"API,APP\" --prefix-colors \"cyan,yellow\"",
+    "build": "next build",
+    "build:api": "npm run build --workspace=realtime-api",
+    "build:all": "npm run build:api && npm run build",
+    "start": "next start",
+    "start:api": "npm run start --workspace=realtime-api",
+    "lint": "next lint",
+    "lint:api": "npm run lint --workspace=realtime-api || true"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.0",
+    "@inworld/runtime": "https://assets.inworld.ai/node-packages/inworld-runtime-1.0.0.tgz",
+    "@mui/icons-material": "^7.0.1",
+    "@mui/material": "^7.0.0",
+    "next": "^16.1.6",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-hook-form": "^7.55.0",
+    "react-hot-toast": "^2.6.0",
+    "uuid": "^11.1.0",
+    "wav-decoder": "^1.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.1",
+    "@types/uuid": "^10.0.0",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
