@@ -1,4 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
+
 import * as RT from '../../types/realtime';
 
 /**
@@ -60,9 +61,7 @@ export class RealtimeEventFactory {
   /**
    * Create a conversation.item.retrieved event
    */
-  static conversationItemRetrieved(
-    item: RT.ConversationItem,
-  ): RT.ConversationItemRetrievedEvent {
+  static conversationItemRetrieved(item: RT.ConversationItem): RT.ConversationItemRetrievedEvent {
     return {
       event_id: uuidv4(),
       type: 'conversation.item.retrieved',
@@ -90,9 +89,7 @@ export class RealtimeEventFactory {
   /**
    * Create a conversation.item.deleted event
    */
-  static conversationItemDeleted(
-    itemId: string,
-  ): RT.ConversationItemDeletedEvent {
+  static conversationItemDeleted(itemId: string): RT.ConversationItemDeletedEvent {
     return {
       event_id: uuidv4(),
       type: 'conversation.item.deleted',
@@ -103,10 +100,7 @@ export class RealtimeEventFactory {
   /**
    * Create an input_audio_buffer.speech_started event
    */
-  static inputAudioBufferSpeechStarted(
-    audioStartMs: number,
-    itemId: string,
-  ): RT.InputAudioBufferSpeechStartedEvent {
+  static inputAudioBufferSpeechStarted(audioStartMs: number, itemId: string): RT.InputAudioBufferSpeechStartedEvent {
     return {
       event_id: uuidv4(),
       type: 'input_audio_buffer.speech_started',
@@ -118,10 +112,7 @@ export class RealtimeEventFactory {
   /**
    * Create an input_audio_buffer.speech_stopped event
    */
-  static inputAudioBufferSpeechStopped(
-    audioEndMs: number,
-    itemId: string,
-  ): RT.InputAudioBufferSpeechStoppedEvent {
+  static inputAudioBufferSpeechStopped(audioEndMs: number, itemId: string): RT.InputAudioBufferSpeechStoppedEvent {
     return {
       event_id: uuidv4(),
       type: 'input_audio_buffer.speech_stopped',
@@ -199,7 +190,6 @@ export class RealtimeEventFactory {
       response,
     };
   }
-
 
   /**
    * Create a response.done event
@@ -457,15 +447,13 @@ export class RealtimeEventFactory {
   /**
    * Create an error event
    */
-  static error(
-    error: {
-      type: string;
-      code?: string;
-      message: string;
-      param?: string;
-      event_id?: string;
-    },
-  ): RT.ErrorEvent {
+  static error(error: {
+    type: string;
+    code?: string;
+    message: string;
+    param?: string;
+    event_id?: string;
+  }): RT.ErrorEvent {
     return {
       event_id: uuidv4(),
       type: 'error',

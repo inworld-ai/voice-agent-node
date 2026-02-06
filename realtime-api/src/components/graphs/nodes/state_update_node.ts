@@ -1,7 +1,7 @@
 import { CustomNode, ProcessContext } from '@inworld/runtime/graph';
-import logger from '../../../logger';
-import { formatSession, formatContext } from '../../../log-helpers';
 
+import { formatContext } from '../../../log-helpers';
+import logger from '../../../logger';
 import { ConnectionsMap, State } from '../../../types/index';
 
 /**
@@ -16,11 +16,7 @@ import { ConnectionsMap, State } from '../../../types/index';
 export class StateUpdateNode extends CustomNode {
   private connections: ConnectionsMap;
 
-  constructor(props: {
-    id: string;
-    connections: ConnectionsMap;
-    reportToClient?: boolean;
-  }) {
+  constructor(props: { id: string; connections: ConnectionsMap; reportToClient?: boolean }) {
     super({
       id: props.id,
       reportToClient: props.reportToClient,
@@ -30,7 +26,10 @@ export class StateUpdateNode extends CustomNode {
 
   process(context: ProcessContext, llmOutput: string): State {
     const sessionId = context.getDatastore().get('sessionId') as string;
-    logger.debug({ sessionId, llmOutputLength: llmOutput?.length }, `StateUpdateNode processing [length:${llmOutput?.length || 0}]`);
+    logger.debug(
+      { sessionId, llmOutputLength: llmOutput?.length },
+      `StateUpdateNode processing [length:${llmOutput?.length || 0}]`,
+    );
 
     // Get sessionId from dataStore (constant for graph execution)
 
@@ -45,7 +44,10 @@ export class StateUpdateNode extends CustomNode {
     // Only add assistant message if there's actual content
     // When LLM returns tool calls only, llmOutput is empty string
     if (llmOutput && llmOutput.trim().length > 0) {
-      logger.debug({ sessionId, content: llmOutput.substring(0, 100) }, `StateUpdateNode adding assistant message: "${llmOutput.substring(0, 50)}..."`);
+      logger.debug(
+        { sessionId, content: llmOutput.substring(0, 100) },
+        `StateUpdateNode adding assistant message: "${llmOutput.substring(0, 50)}..."`,
+      );
       connection.state.messages.push({
         role: 'assistant',
         content: llmOutput,
@@ -57,10 +59,13 @@ export class StateUpdateNode extends CustomNode {
 
     const dataStore = context.getDatastore();
     dataStore.add('c' + connection.state.interactionId, '');
-    logger.info({
-      sessionId,
-      interactionId: connection.state.interactionId,
-    }, `StateUpdateNode marking interaction completed ${formatContext(sessionId, undefined, connection.state.interactionId)}`);
+    logger.info(
+      {
+        sessionId,
+        interactionId: connection.state.interactionId,
+      },
+      `StateUpdateNode marking interaction completed ${formatContext(sessionId, undefined, connection.state.interactionId)}`,
+    );
 
     return connection.state;
   }

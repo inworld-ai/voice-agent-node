@@ -1,6 +1,6 @@
-import {CustomNode, Graph, GraphTypes, ProcessContext} from '@inworld/runtime/graph';
-import logger from '../../../logger';
+import { CustomNode, GraphTypes, LLMChatRoutingRequest, ProcessContext } from '@inworld/runtime/graph';
 
+import logger from '../../../logger';
 import { State } from '../../../types/index';
 
 /**
@@ -14,7 +14,10 @@ import { State } from '../../../types/index';
 export class LLMChatRoutingRequestNode extends CustomNode {
   process(_context: ProcessContext, state: State): GraphTypes.LLMChatRoutingRequest {
     try {
-      logger.debug({ messageCount: state.messages?.length }, `LLMChatRoutingRequestNode start: ${state.messages?.length || 0} messages`);
+      logger.debug(
+        { messageCount: state.messages?.length },
+        `LLMChatRoutingRequestNode start: ${state.messages?.length || 0} messages`,
+      );
 
       // Convert state messages to LLMMessageInterface format
       // Filter out messages with empty content
@@ -36,13 +39,16 @@ export class LLMChatRoutingRequestNode extends CustomNode {
           content: msg.content,
         }));
 
-      const request: any = {
+      const request: LLMChatRoutingRequest = {
         messages: conversationMessages,
-        stream: true
+        stream: true,
       };
 
       if (state.tools && Array.isArray(state.tools) && state.tools.length > 0) {
-        logger.debug({ toolCount: state.tools.length }, `LLMChatRoutingRequestNode processing ${state.tools.length} tools`);
+        logger.debug(
+          { toolCount: state.tools.length },
+          `LLMChatRoutingRequestNode processing ${state.tools.length} tools`,
+        );
 
         // Transform OpenAI Realtime API format to Inworld SDK format
         // OpenAI Realtime API: { type: 'function', name, description, parameters }
@@ -62,7 +68,10 @@ export class LLMChatRoutingRequestNode extends CustomNode {
             return tool;
           });
 
-        logger.debug({ toolCount: request.tools.length }, `LLMChatRoutingRequestNode converted ${request.tools.length} tools to Inworld format`);
+        logger.debug(
+          { toolCount: request.tools.length },
+          `LLMChatRoutingRequestNode converted ${request.tools.length} tools to Inworld format`,
+        );
 
         // Handle toolChoice - ensure it's in the right format
         if (state.toolChoice) {
@@ -75,15 +84,17 @@ export class LLMChatRoutingRequestNode extends CustomNode {
           request.toolChoice = { type: 'auto' };
         }
 
-        logger.debug({ toolChoice: request.toolChoice }, `LLMChatRoutingRequestNode tool choice: ${request.toolChoice}`);
+        logger.debug(
+          { toolChoice: request.toolChoice },
+          `LLMChatRoutingRequestNode tool choice: ${request.toolChoice}`,
+        );
       }
 
       // Configure model selection from state
       if (state.modelId) {
         request.modelId = state.modelId;
-      }
-      else {
-        request.modelId = {provider: "google", modelName: "gemini-2.5-flash"}; // HARDCODE: Must be specified for now
+      } else {
+        request.modelId = state.fallbackModelId;
       }
 
       if (state.modelSelection) {
@@ -94,13 +105,15 @@ export class LLMChatRoutingRequestNode extends CustomNode {
         request.textGenerationConfig = state.textGenerationConfig;
       }
 
-
-      logger.debug({
-        messageCount: conversationMessages.length,
-        modelId: request.modelId,
-        modelSelection: request.modelSelection,
-        textGenerationConfig: request.textGenerationConfig
-      }, `LLMChatRoutingRequestNode final request: ${conversationMessages.length} messages`);
+      logger.debug(
+        {
+          messageCount: conversationMessages.length,
+          modelId: request.modelId,
+          modelSelection: request.modelSelection,
+          textGenerationConfig: request.textGenerationConfig,
+        },
+        `LLMChatRoutingRequestNode final request: ${conversationMessages.length} messages`,
+      );
 
       return new GraphTypes.LLMChatRoutingRequest(request);
     } catch (error) {

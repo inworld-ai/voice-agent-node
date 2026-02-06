@@ -19,7 +19,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "@inworld/runtime": "https://assets.inworld.ai/node-packages/inworld-runtime-1.0.0.tgz",
+    "@inworld/runtime": "^1.0.0-rc.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",

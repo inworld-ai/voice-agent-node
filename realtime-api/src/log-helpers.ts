@@ -1,6 +1,6 @@
 /**
  * Helper utilities for creating readable log messages with key context
- * 
+ *
  * These helpers make it easy to include important information in both:
  * 1. The message text (visible at a glance)
  * 2. Structured fields (for querying/filtering)
@@ -53,36 +53,29 @@ export function formatError(error: unknown): string {
  * Combine session and workspace tags
  * Usage: `Something happened ${formatContext(sessionId, workspaceId)}`
  */
-export function formatContext(
-  sessionId?: string,
-  workspaceId?: string,
-  interactionId?: string
-): string {
-  const parts = [
-    formatSession(sessionId),
-    formatWorkspace(workspaceId),
-    formatInteraction(interactionId),
-  ].filter(Boolean);
-  
+export function formatContext(sessionId?: string, workspaceId?: string, interactionId?: string): string {
+  const parts = [formatSession(sessionId), formatWorkspace(workspaceId), formatInteraction(interactionId)].filter(
+    Boolean,
+  );
+
   return parts.join(' ');
 }
 
 /**
  * Example usage:
- * 
+ *
  * logger.info(
  *   { sessionId, workspaceId },
  *   `WebSocket connected ${formatContext(sessionId, workspaceId)}`
  * );
- * 
+ *
  * logger.error(
  *   { error, sessionId, operation },
  *   `Operation failed ${formatSession(sessionId)}${formatError(error)}`
  * );
- * 
+ *
  * logger.info(
  *   { sessionId, duration },
  *   `Request completed ${formatSession(sessionId)} ${formatDuration(duration)}`
  * );
  */
-

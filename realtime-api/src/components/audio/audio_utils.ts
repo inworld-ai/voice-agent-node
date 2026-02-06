@@ -26,11 +26,7 @@ export function float32ToPCM16(float32Data: Float32Array): Int16Array {
  * @param debugLabel - Label for debug logging
  * @returns Base64 encoded PCM16 audio data, or null if conversion fails
  */
-export function convertToPCM16Base64(
-  audioData: any,
-  sampleRate?: number,
-  debugLabel: string = 'Audio',
-): string | null {
+export function convertToPCM16Base64(audioData: any, sampleRate?: number, debugLabel: string = 'Audio'): string | null {
   if (!audioData) {
     logger.error({ debugLabel }, 'Audio Utils - No audio data provided');
     return null;
@@ -44,19 +40,11 @@ export function convertToPCM16Base64(
     // Interpret these bytes as Float32 data (4 bytes per float)
     // console.log(`[${debugLabel}] Converting byte array to Float32Array`);
     const byteBuffer = Buffer.from(audioData);
-    floatSamples = new Float32Array(
-      byteBuffer.buffer,
-      byteBuffer.byteOffset,
-      byteBuffer.length / 4,
-    );
+    floatSamples = new Float32Array(byteBuffer.buffer, byteBuffer.byteOffset, byteBuffer.length / 4);
   } else if (Buffer.isBuffer(audioData)) {
     // If it's already a Buffer
     logger.debug({ debugLabel }, 'Audio Utils - Converting Buffer to Float32Array');
-    floatSamples = new Float32Array(
-      audioData.buffer,
-      audioData.byteOffset,
-      audioData.length / 4,
-    );
+    floatSamples = new Float32Array(audioData.buffer, audioData.byteOffset, audioData.length / 4);
   } else if (audioData instanceof Float32Array) {
     // Already Float32Array
     logger.debug({ debugLabel }, 'Audio Utils - Using existing Float32Array');
@@ -65,13 +53,12 @@ export function convertToPCM16Base64(
     // If it's a base64 string (legacy format)
     logger.debug({ debugLabel }, 'Audio Utils - Decoding base64 string to Float32Array');
     const decodedData = Buffer.from(audioData, 'base64');
-    floatSamples = new Float32Array(
-      decodedData.buffer,
-      decodedData.byteOffset,
-      decodedData.length / 4,
-    );
+    floatSamples = new Float32Array(decodedData.buffer, decodedData.byteOffset, decodedData.length / 4);
   } else {
-    logger.error({ debugLabel, dataType: typeof audioData }, `Audio Utils - Unsupported audio data type: ${typeof audioData}`);
+    logger.error(
+      { debugLabel, dataType: typeof audioData },
+      `Audio Utils - Unsupported audio data type: ${typeof audioData}`,
+    );
     return null;
   }
 

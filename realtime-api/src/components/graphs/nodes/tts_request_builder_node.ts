@@ -1,6 +1,6 @@
 import { CustomNode, GraphTypes, ProcessContext } from '@inworld/runtime/graph';
+
 import logger from '../../../logger';
-import { formatSession } from '../../../log-helpers';
 import { ConnectionsMap } from '../../../types/index';
 
 /**
@@ -12,12 +12,7 @@ export class TTSRequestBuilderNode extends CustomNode {
   private connections: ConnectionsMap;
   private defaultVoiceId: string;
 
-  constructor(props: {
-    id: string;
-    connections: ConnectionsMap;
-    defaultVoiceId: string;
-    reportToClient?: boolean;
-  }) {
+  constructor(props: { id: string; connections: ConnectionsMap; defaultVoiceId: string; reportToClient?: boolean }) {
     super({
       id: props.id,
       reportToClient: props.reportToClient,
@@ -32,28 +27,27 @@ export class TTSRequestBuilderNode extends CustomNode {
    * 1. input - Graph input with sessionId (TextInput or State)
    * 2. textStream - The text stream from TextChunkingNode
    */
-  process(
-    context: ProcessContext,
-    input: any,
-    textStream: GraphTypes.TextStream,
-  ): GraphTypes.TTSRequest {
+  process(context: ProcessContext, input: any, textStream: GraphTypes.TextStream): GraphTypes.TTSRequest {
     const sessionId = context.getDatastore().get('sessionId') as string;
-    
+
     // For long-running graphs, read voiceId from connection state at processing time
     // This ensures voice changes via session.update are immediately reflected
     const connection = this.connections[sessionId];
     const voiceId = connection?.state?.voiceId || input?.voiceId || this.defaultVoiceId;
-    
-    logger.debug({
-      sessionId,
-      voiceId,
-      connectionVoiceId: connection?.state?.voiceId,
-      inputVoiceId: input?.voiceId,
-      defaultVoiceId: this.defaultVoiceId,
-    }, `TTSRequestBuilder building request [voice:${voiceId}]`);
+
+    logger.debug(
+      {
+        sessionId,
+        voiceId,
+        connectionVoiceId: connection?.state?.voiceId,
+        inputVoiceId: input?.voiceId,
+        defaultVoiceId: this.defaultVoiceId,
+      },
+      `TTSRequestBuilder building request [voice:${voiceId}]`,
+    );
 
     return GraphTypes.TTSRequest.withStream(textStream, {
-      id: voiceId
+      id: voiceId,
     });
   }
 
@@ -61,4 +55,3 @@ export class TTSRequestBuilderNode extends CustomNode {
     // No cleanup needed
   }
 }
-

@@ -1,8 +1,8 @@
-import { AudioChunkInterface } from '@inworld/runtime/common';
-import { GraphOutputStream } from '@inworld/runtime/graph';
+import { GraphOutputStream, LLMSelectionConfig, TextGenerationConfig } from '@inworld/runtime/graph';
+import { Message, Tool, ToolChoice } from '@inworld/runtime/primitives/llm';
+import { AudioChunk } from '@inworld/runtime/primitives/speech';
 
 import { MultimodalStreamManager } from '../components/audio/multimodal_stream_manager';
-import { TextGenerationConfig } from './realtime';
 
 export enum EVENT_TYPE {
   TEXT = 'TEXT',
@@ -18,11 +18,8 @@ export enum AUDIO_SESSION_STATE {
   INACTIVE = 'INACTIVE',
 }
 
-export interface ChatMessage {
+export interface ChatMessage extends Message {
   id: string;
-  role: string;
-  content: string;
-  tool_call_id?: string; // For tool/function call outputs
 }
 
 export interface Agent {
@@ -42,7 +39,7 @@ export interface TextInput {
 
 export interface AudioInput {
   sessionId: string;
-  audio: AudioChunkInterface;
+  audio: AudioChunk;
   state: State;
   interactionId: string;
 }
@@ -59,20 +56,14 @@ export interface State {
   userName: string;
   messages: ChatMessage[];
   voiceId?: string;
-  tools?: any[];
-  toolChoice?: string | object;
+  tools?: Tool[];
+  toolChoice?: ToolChoice;
   eagerness?: 'low' | 'medium' | 'high';
   output_modalities?: ('text' | 'audio')[];
-  modelId?: {
-    provider: string;
-    modelName: string;
-  };
-  modelSelection?: {
-    ignore?: { provider: string; modelName: string }[];
-    models?: { provider: string; modelName: string }[];
-    sort?: { direction: string; metric: string }[];
-  };
+  modelId?: string;
+  modelSelection?: LLMSelectionConfig;
   textGenerationConfig?: TextGenerationConfig;
+  fallbackModelId: string;
 }
 
 export interface Connection {

@@ -1,20 +1,22 @@
-import logger from '../../logger';
-import { formatSession, formatError } from '../../log-helpers';
+import { toBuffer } from '@inworld/runtime/common';
+
 import { INPUT_SAMPLE_RATE } from '../../config';
+import { IRealtimeApp } from '../../interfaces/app';
+import { IInworldGraph } from '../../interfaces/graph';
+import logger from '../../logger';
 import * as RT from '../../types/realtime';
-import { InworldApp } from '../app';
-import { MultimodalStreamManager } from './multimodal_stream_manager';
-import { RealtimeEventFactory } from '../realtime/realtime_event_factory';
 import { RealtimeGraphExecutor } from '../graphs/realtime_graph_executor';
+import { RealtimeEventFactory } from '../realtime/realtime_event_factory';
 import { RealtimeSessionManager } from '../realtime/realtime_session_manager';
+import { MultimodalStreamManager } from './multimodal_stream_manager';
 
 export class RealtimeAudioHandler {
   constructor(
-    private inworldApp: InworldApp,
+    private realtimeApp: IRealtimeApp,
     private sessionKey: string,
     private send: (data: RT.ServerEvent) => void,
     private graphExecutor: RealtimeGraphExecutor,
-    private sessionManager: RealtimeSessionManager
+    private sessionManager: RealtimeSessionManager,
   ) {}
 
   /**
@@ -24,10 +26,10 @@ export class RealtimeAudioHandler {
    * @param context - Context string for logging (e.g., 'Audio', 'Text Input')
    */
   private ensureAudioGraphExecution(
-    connection: NonNullable<typeof this.inworldApp.connections[string]>,
-    context: string = 'Audio'
+    connection: NonNullable<(typeof this.realtimeApp.connections)[string]>,
+    context: string = 'Audio',
   ): void {
-    if (connection.multimodalStreamManager) {
+    if (connection.multimodalStreamManager && !connection.multimodalStreamManager.isEnded()) {
       return;
     }
 
@@ -42,19 +44,20 @@ export class RealtimeAudioHandler {
       voiceId: connection.state.voiceId || session.session.audio.output.voice,
     };
 
-    // Use the Assembly.AI audio graph
-    const graphWrapper = this.inworldApp.graphWithAudioInput;
+    // Get the Inworld graph for audio processing
+    const graphWrapper = this.realtimeApp.getGraph() as IInworldGraph;
 
     // Start graph execution in the background - it will consume from the stream
-    connection.currentAudioGraphExecution =
-      this.graphExecutor.executeAudioGraph({
+    connection.currentAudioGraphExecution = this.graphExecutor
+      .executeAudioGraph({
         sessionId: this.sessionKey,
         workspaceId: connection.workspaceId,
         apiKey: connection.apiKey,
         input: audioStreamInput,
         graphWrapper,
         multimodalStreamManager: connection.multimodalStreamManager,
-      }).catch((error) => {
+      })
+      .catch((error) => {
         logger.error({ err: error, sessionId: this.sessionKey }, `${context} - Error in audio graph execution`);
         // Clean up on error
         if (connection.multimodalStreamManager) {
@@ -76,10 +79,8 @@ export class RealtimeAudioHandler {
    * Handle input_audio_buffer.append event
    * Stream audio directly to Inworld SDK 0.8 audio graph
    */
-  async handleInputAudioBufferAppend(
-    event: RT.InputAudioBufferAppendEvent,
-  ): Promise<void> {
-    const connection = this.inworldApp.connections[this.sessionKey];
+  async handleInputAudioBufferAppend(event: RT.InputAudioBufferAppendEvent): Promise<void> {
+    const connection = this.realtimeApp.connections[this.sessionKey];
     if (!connection) {
       logger.error({ sessionId: this.sessionKey }, 'Audio - No connection found');
       return;
@@ -87,11 +88,7 @@ export class RealtimeAudioHandler {
 
     // Decode base64 audio (PCM16 at 24kHz from OpenAI)
     const audioBuffer = Buffer.from(event.audio, 'base64');
-    const int16Array = new Int16Array(
-      audioBuffer.buffer,
-      audioBuffer.byteOffset,
-      audioBuffer.length / 2,
-    );
+    const int16Array = new Int16Array(audioBuffer.buffer, audioBuffer.byteOffset, audioBuffer.length / 2);
 
     // Convert PCM16 Int16 to Float32 for Inworld graph (normalize to -1.0 to 1.0)
     const float32Array = new Float32Array(int16Array.length);
@@ -101,15 +98,15 @@ export class RealtimeAudioHandler {
 
     // Downsample from 24kHz to 16kHz (2:3 ratio)
     // For every 3 samples at 24kHz, we output 2 samples at 16kHz
-    const targetLength = Math.floor(float32Array.length * 2 / 3);
+    const targetLength = Math.floor((float32Array.length * 2) / 3);
     const resampled = new Float32Array(targetLength);
-    
+
     for (let i = 0; i < targetLength; i++) {
       const sourceIndex = i * 1.5; // 24kHz/16kHz = 1.5
       const index0 = Math.floor(sourceIndex);
       const index1 = Math.min(index0 + 1, float32Array.length - 1);
       const frac = sourceIndex - index0;
-      
+
       // Linear interpolation
       resampled[i] = float32Array[index0] * (1 - frac) + float32Array[index1] * frac;
     }
@@ -122,7 +119,7 @@ export class RealtimeAudioHandler {
 
     // Push the audio chunk to the stream (already resampled to 16kHz)
     connection.multimodalStreamManager!.pushAudio({
-      data: audioData,
+      data: toBuffer(audioData),
       sampleRate: INPUT_SAMPLE_RATE, // 16kHz for Inworld graph
     });
   }
@@ -131,10 +128,8 @@ export class RealtimeAudioHandler {
    * Handle input_audio_buffer.commit event
    * End the audio stream and wait for graph to complete
    */
-  async handleInputAudioBufferCommit(
-    event: RT.InputAudioBufferCommitEvent,
-  ): Promise<void> {
-    const connection = this.inworldApp.connections[this.sessionKey];
+  async handleInputAudioBufferCommit(event: RT.InputAudioBufferCommitEvent): Promise<void> {
+    const connection = this.realtimeApp.connections[this.sessionKey];
     if (!connection) {
       this.send(
         RealtimeEventFactory.error({
@@ -157,7 +152,10 @@ export class RealtimeAudioHandler {
       return;
     }
 
-    logger.info({ sessionId: this.sessionKey }, `Commit - Manual commit requested - ending audio stream [${this.sessionKey}]`);
+    logger.info(
+      { sessionId: this.sessionKey },
+      `Commit - Manual commit requested - ending audio stream [${this.sessionKey}]`,
+    );
     connection.multimodalStreamManager.end();
 
     // Wait for the graph execution to complete
@@ -172,10 +170,8 @@ export class RealtimeAudioHandler {
   /**
    * Handle input_audio_buffer.clear event
    */
-  async handleInputAudioBufferClear(
-    event: RT.InputAudioBufferClearEvent,
-  ): Promise<void> {
-    const connection = this.inworldApp.connections[this.sessionKey];
+  async handleInputAudioBufferClear(_event: RT.InputAudioBufferClearEvent): Promise<void> {
+    const connection = this.realtimeApp.connections[this.sessionKey];
     if (connection?.multimodalStreamManager) {
       connection.multimodalStreamManager.end();
       connection.multimodalStreamManager = undefined;
@@ -191,13 +187,16 @@ export class RealtimeAudioHandler {
    * This unifies text and audio inputs through the same audio graph
    */
   async handleTextInput(text: string): Promise<void> {
-    const connection = this.inworldApp.connections[this.sessionKey];
+    const connection = this.realtimeApp.connections[this.sessionKey];
     if (!connection) {
       logger.error({ sessionId: this.sessionKey }, 'Text Input - No connection found');
       return;
     }
 
-    logger.info({ sessionId: this.sessionKey, text: text.substring(0, 100) }, `Text Input - Pushing text to audio graph: "${text.substring(0, 50)}..."`);
+    logger.info(
+      { sessionId: this.sessionKey, text: text.substring(0, 100) },
+      `Text Input - Pushing text to audio graph: "${text.substring(0, 50)}..."`,
+    );
 
     // Ensure the audio graph execution is running
     this.ensureAudioGraphExecution(connection, 'Text Input');
@@ -210,4 +209,3 @@ export class RealtimeAudioHandler {
     // The response.create event will wait for completion if needed
   }
 }
-

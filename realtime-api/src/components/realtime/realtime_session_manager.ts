@@ -1,22 +1,21 @@
 import { v4 as uuidv4 } from 'uuid';
+
+import { IRealtimeApp } from '../../interfaces/app';
 import logger from '../../logger';
-import { formatSession, formatContext } from '../../log-helpers';
 import * as RT from '../../types/realtime';
-import { InworldApp } from '../app';
-import { RealtimeEventFactory } from './realtime_event_factory';
-import { Connection } from '../../types/index';
 import { getAssemblyAISettingsForEagerness } from '../../types/settings';
 import { RealtimeAudioHandler } from '../audio/realtime_audio_handler';
+import { RealtimeEventFactory } from './realtime_event_factory';
 
 export class RealtimeSessionManager {
   realtimeSession: RT.RealtimeSession;
   private sessionStartTime: number;
 
   constructor(
-    private inworldApp: InworldApp,
+    private realtimeApp: IRealtimeApp,
     private sessionKey: string,
     private send: (data: RT.ServerEvent) => void,
-    sessionStartTime: number
+    sessionStartTime: number,
   ) {
     this.sessionStartTime = sessionStartTime;
     this.realtimeSession = this.createDefaultSession();
@@ -26,14 +25,13 @@ export class RealtimeSessionManager {
     return this.realtimeSession;
   }
 
-
   /**
    * Create a default session configuration
    */
   private createDefaultSession(): RT.RealtimeSession {
     const sessionId = uuidv4();
 
-    const connection = this.inworldApp.connections[this.sessionKey];
+    const connection = this.realtimeApp.connections[this.sessionKey];
     const instructions = connection?.state?.agent
       ? `You are: "${connection.state.agent.name}". Your persona is: "${connection.state.agent.description}". Your motivation is: "${connection.state.agent.motivation}".`
       : 'You are a helpful AI assistant.';
@@ -56,7 +54,7 @@ export class RealtimeSessionManager {
         object: 'realtime.session',
         output_modalities: defaultOutputModalities,
         instructions,
-        model_id: this.inworldApp.fallback_model_id,
+        modelId: this.realtimeApp.fallbackModelId,
         audio: {
           input: {
             format: {
@@ -77,12 +75,12 @@ export class RealtimeSessionManager {
               type: 'audio/pcm',
               rate: 24000,
             },
-            voice: this.inworldApp.voiceId,
+            voice: this.realtimeApp.voiceId,
             speed: 1,
           },
         },
         tools: [],
-        tool_choice: 'auto',
+        toolChoice: { type: 'auto' },
         temperature: 0.8,
         max_output_tokens: 'inf',
         truncation: 'auto',
@@ -111,14 +109,17 @@ export class RealtimeSessionManager {
       this.realtimeSession.session.output_modalities = sessionConfig.output_modalities;
 
       // Sync to connection state for easy access by sessionId
-      const connection = this.inworldApp.connections[this.sessionKey];
+      const connection = this.realtimeApp.connections[this.sessionKey];
       if (connection) {
         connection.state.output_modalities = sessionConfig.output_modalities;
-        logger.info({
-          sessionId: this.sessionKey,
-          output_modalities: sessionConfig.output_modalities,
-          state_modalities: connection.state.output_modalities
-        }, `Updated connection.state.output_modalities`);
+        logger.info(
+          {
+            sessionId: this.sessionKey,
+            output_modalities: sessionConfig.output_modalities,
+            state_modalities: connection.state.output_modalities,
+          },
+          `Updated connection.state.output_modalities`,
+        );
       } else {
         logger.warn({ sessionId: this.sessionKey }, `No connection found when updating output_modalities`);
       }
@@ -128,12 +129,10 @@ export class RealtimeSessionManager {
       this.realtimeSession.session.instructions = sessionConfig.instructions;
 
       // Inject system instructions as the first message in the conversation state
-      const connection = this.inworldApp.connections[this.sessionKey];
+      const connection = this.realtimeApp.connections[this.sessionKey];
       if (connection && sessionConfig.instructions) {
         // Check if there's already a system message at the start
-        const hasSystemMessage =
-          connection.state.messages.length > 0 &&
-          connection.state.messages[0].role === 'system';
+        const hasSystemMessage = connection.state.messages.length > 0 && connection.state.messages[0].role === 'system';
 
         if (hasSystemMessage) {
           // Update existing system message
@@ -179,32 +178,45 @@ export class RealtimeSessionManager {
             if (sessionConfig.audio.input.turn_detection.type === 'semantic_vad') {
               const eagerness = sessionConfig.audio.input.turn_detection.eagerness;
               if (eagerness && eagerness !== 'auto') {
-                const connection = this.inworldApp.connections[this.sessionKey];
+                const connection = this.realtimeApp.connections[this.sessionKey];
                 if (connection) {
                   const normalizedEagerness = eagerness as 'low' | 'medium' | 'high';
                   connection.state.eagerness = normalizedEagerness;
                   logger.info({ sessionId: this.sessionKey, eagerness }, `Updated eagerness to ${eagerness}`);
 
                   // Dynamically update AssemblyAI turn detection settings on the active graph
-                  const assemblyAINode = this.inworldApp.graphWithAudioInput?.assemblyAINode;
+                  const assemblyAINode = this.realtimeApp.getGraph()?.assemblyAINode;
                   if (assemblyAINode) {
                     const assemblySettings = getAssemblyAISettingsForEagerness(normalizedEagerness);
                     // Extract only the numeric settings for updateTurnDetectionSettings
-                    const { endOfTurnConfidenceThreshold, minEndOfTurnSilenceWhenConfident, maxTurnSilence } = assemblySettings;
-                    logger.info({ sessionId: this.sessionKey, endOfTurnConfidenceThreshold, minEndOfTurnSilenceWhenConfident, maxTurnSilence }, `Applying eagerness settings: threshold=${endOfTurnConfidenceThreshold}`);
-                    assemblyAINode.updateTurnDetectionSettings(
-                        this.sessionKey,
-                        { endOfTurnConfidenceThreshold, minEndOfTurnSilenceWhenConfident, maxTurnSilence }
-                    )
+                    const { endOfTurnConfidenceThreshold, minEndOfTurnSilenceWhenConfident, maxTurnSilence } =
+                      assemblySettings;
+                    logger.info(
+                      {
+                        sessionId: this.sessionKey,
+                        endOfTurnConfidenceThreshold,
+                        minEndOfTurnSilenceWhenConfident,
+                        maxTurnSilence,
+                      },
+                      `Applying eagerness settings: threshold=${endOfTurnConfidenceThreshold}`,
+                    );
+                    assemblyAINode.updateTurnDetectionSettings(this.sessionKey, {
+                      endOfTurnConfidenceThreshold,
+                      minEndOfTurnSilenceWhenConfident,
+                      maxTurnSilence,
+                    });
                   } else {
-                    logger.warn({ sessionId: this.sessionKey }, 'AssemblyAI node not found, settings will apply on next audio input');
+                    logger.warn(
+                      { sessionId: this.sessionKey },
+                      'AssemblyAI node not found, settings will apply on next audio input',
+                    );
                     this.send(
-                        RealtimeEventFactory.error({
-                          type: 'invalid_request_error',
-                          code: 'no_STT_session',
-                          message: `Server did not find active STT connection. Turning on Mic to start audio stream input session.`,
-                          event_id: event.event_id,
-                        }),
+                      RealtimeEventFactory.error({
+                        type: 'invalid_request_error',
+                        code: 'no_STT_session',
+                        message: `Server did not find active STT connection. Turning on Mic to start audio stream input session.`,
+                        event_id: event.event_id,
+                      }),
                     );
                   }
                 }
@@ -226,10 +238,13 @@ export class RealtimeSessionManager {
           this.realtimeSession.session.audio.output.voice = sessionConfig.audio.output.voice;
 
           // Store voice in connection state for TTS node
-          const connection = this.inworldApp.connections[this.sessionKey];
+          const connection = this.realtimeApp.connections[this.sessionKey];
           if (connection) {
             connection.state.voiceId = sessionConfig.audio.output.voice;
-            logger.info({ sessionId: this.sessionKey, voice: sessionConfig.audio.output.voice }, `Updated TTS voice to ${sessionConfig.audio.output.voice}`);
+            logger.info(
+              { sessionId: this.sessionKey, voice: sessionConfig.audio.output.voice },
+              `Updated TTS voice to ${sessionConfig.audio.output.voice}`,
+            );
           }
         }
         if (sessionConfig.audio.output.speed !== undefined) {
@@ -242,19 +257,19 @@ export class RealtimeSessionManager {
       this.realtimeSession.session.tools = sessionConfig.tools;
 
       // Update connection state with tools
-      const connection = this.inworldApp.connections[this.sessionKey];
+      const connection = this.realtimeApp.connections[this.sessionKey];
       if (connection) {
         connection.state.tools = sessionConfig.tools;
       }
     }
 
-    if (sessionConfig.tool_choice !== undefined) {
-      this.realtimeSession.session.tool_choice = sessionConfig.tool_choice;
+    if (sessionConfig.toolChoice !== undefined) {
+      this.realtimeSession.session.toolChoice = sessionConfig.toolChoice;
 
       // Update connection state with toolChoice
-      const connection = this.inworldApp.connections[this.sessionKey];
+      const connection = this.realtimeApp.connections[this.sessionKey];
       if (connection) {
-        connection.state.toolChoice = sessionConfig.tool_choice;
+        connection.state.toolChoice = sessionConfig.toolChoice;
       }
     }
 
@@ -282,36 +297,42 @@ export class RealtimeSessionManager {
       this.realtimeSession.session.include = sessionConfig.include;
     }
 
-    if (sessionConfig.model_id !== undefined) {
-      this.realtimeSession.session.model_id = sessionConfig.model_id;
+    if (sessionConfig.modelId !== undefined) {
+      this.realtimeSession.session.modelId = sessionConfig.modelId;
 
       // Update connection state
-      const connection = this.inworldApp.connections[this.sessionKey];
+      const connection = this.realtimeApp.connections[this.sessionKey];
       if (connection) {
-        connection.state.modelId = sessionConfig.model_id;
-        logger.info({ sessionId: this.sessionKey, modelId: sessionConfig.model_id }, `Updated connection.state.modelId`);
+        connection.state.modelId = sessionConfig.modelId;
+        logger.info({ sessionId: this.sessionKey, modelId: sessionConfig.modelId }, `Updated connection.state.modelId`);
       }
     }
 
-    if (sessionConfig.model_selection !== undefined) {
-      this.realtimeSession.session.model_selection = sessionConfig.model_selection;
+    if (sessionConfig.modelSelection !== undefined) {
+      this.realtimeSession.session.modelSelection = sessionConfig.modelSelection;
 
       // Update connection state
-      const connection = this.inworldApp.connections[this.sessionKey];
+      const connection = this.realtimeApp.connections[this.sessionKey];
       if (connection) {
-        connection.state.modelSelection = sessionConfig.model_selection;
-        logger.info({ sessionId: this.sessionKey, modelSelection: sessionConfig.model_selection }, `Updated connection.state.modelSelection`);
+        connection.state.modelSelection = sessionConfig.modelSelection;
+        logger.info(
+          { sessionId: this.sessionKey, modelSelection: sessionConfig.modelSelection },
+          `Updated connection.state.modelSelection`,
+        );
       }
     }
 
-    if (sessionConfig.text_generation_config !== undefined) {
-      this.realtimeSession.session.text_generation_config = sessionConfig.text_generation_config;
+    if (sessionConfig.textGenerationConfig !== undefined) {
+      this.realtimeSession.session.textGenerationConfig = sessionConfig.textGenerationConfig;
 
       // Update connection state
-      const connection = this.inworldApp.connections[this.sessionKey];
+      const connection = this.realtimeApp.connections[this.sessionKey];
       if (connection) {
-        connection.state.textGenerationConfig = sessionConfig.text_generation_config;
-        logger.info({ sessionId: this.sessionKey, textGenerationConfig: sessionConfig.text_generation_config }, `Updated connection.state.textGenerationConfig`);
+        connection.state.textGenerationConfig = sessionConfig.textGenerationConfig;
+        logger.info(
+          { sessionId: this.sessionKey, textGenerationConfig: sessionConfig.textGenerationConfig },
+          `Updated connection.state.textGenerationConfig`,
+        );
       }
     }
 
@@ -334,25 +355,24 @@ export class RealtimeSessionManager {
     };
 
     this.realtimeSession.conversationItems.push(item);
-    this.send(
-      RealtimeEventFactory.conversationItemAdded(item, event.previous_item_id),
-    );
-    this.send(
-      RealtimeEventFactory.conversationItemDone(item, event.previous_item_id),
-    );
+    this.send(RealtimeEventFactory.conversationItemAdded(item, event.previous_item_id));
+    this.send(RealtimeEventFactory.conversationItemDone(item, event.previous_item_id));
 
     // Add to conversation state so LLM is aware of this item
-    const connection = this.inworldApp.connections[this.sessionKey];
+    const connection = this.realtimeApp.connections[this.sessionKey];
     if (connection) {
       // Handle different item types
       if (item.type === 'function_call_output') {
         // Function call output received
         const functionOutputItem = item as RT.FunctionCallOutputItem;
-        logger.info({
-          sessionId: this.sessionKey,
-          call_id: functionOutputItem.call_id,
-          output: functionOutputItem.output,
-        }, 'Function output received');
+        logger.info(
+          {
+            sessionId: this.sessionKey,
+            call_id: functionOutputItem.call_id,
+            output: functionOutputItem.output,
+          },
+          'Function output received',
+        );
 
         // Add a system message to inform the LLM that the function was executed
         // The Inworld SDK/Groq combo doesn't properly support 'tool' role with tool_call_id
@@ -381,11 +401,14 @@ export class RealtimeSessionManager {
           }
 
           if (textContent) {
-            logger.info({
-              sessionId: this.sessionKey,
-              role: messageItem.role,
-              contentPreview: textContent.substring(0, 100),
-            }, `Adding ${messageItem.role} message: ${textContent.substring(0, 50)}...`);
+            logger.info(
+              {
+                sessionId: this.sessionKey,
+                role: messageItem.role,
+                contentPreview: textContent.substring(0, 100),
+              },
+              `Adding ${messageItem.role} message: ${textContent.substring(0, 50)}...`,
+            );
             // We don't need to call connection.state.messages.push here. That's handled in the graph's input node
           }
 
@@ -401,20 +424,16 @@ export class RealtimeSessionManager {
   /**
    * Handle conversation.item.truncate event
    */
-  async truncateConversationItem(
-    event: RT.ConversationItemTruncateEvent,
-  ): Promise<void> {
+  async truncateConversationItem(event: RT.ConversationItemTruncateEvent): Promise<void> {
     // Find the item
-    const item = this.realtimeSession.conversationItems.find(
-      (i) => i.id === event.item_id,
-    );
+    const item = this.realtimeSession.conversationItems.find((i) => i.id === event.item_id);
 
     if (!item) {
       this.send(
         RealtimeEventFactory.error({
           type: 'invalid_request_error',
           code: 'item_not_found',
-          message: `Item with id ${event.item_id} not found`,
+          message: `Item with id ${event.item_id} not found. Your client might be sending interruptions too fast that the server hasn't created the item yet.`,
           event_id: event.event_id,
         }),
       );
@@ -427,7 +446,7 @@ export class RealtimeSessionManager {
         RealtimeEventFactory.error({
           type: 'invalid_request_error',
           code: 'invalid_item_type',
-          message: 'Only assistant message items can be truncated',
+          message: `Cannot truncate item ${event.item_id}. Only assistant message items can be truncated`,
           event_id: event.event_id,
         }),
       );
@@ -449,34 +468,27 @@ export class RealtimeSessionManager {
         delete contentPart.transcript;
 
         // In a full implementation, we would also truncate the audio data itself
-        logger.info({
-          sessionId: this.sessionKey,
-          itemId: event.item_id,
-          audioEndMs: event.audio_end_ms,
-          contentIndex: event.content_index,
-        }, `Truncating item ${event.item_id} at ${event.audio_end_ms}ms`);
+        logger.info(
+          {
+            sessionId: this.sessionKey,
+            itemId: event.item_id,
+            audioEndMs: event.audio_end_ms,
+            contentIndex: event.content_index,
+          },
+          `Truncating item ${event.item_id} at ${event.audio_end_ms}ms`,
+        );
       }
     }
 
     // Send the truncated event
-    this.send(
-      RealtimeEventFactory.conversationItemTruncated(
-        event.item_id,
-        event.content_index,
-        event.audio_end_ms,
-      ),
-    );
+    this.send(RealtimeEventFactory.conversationItemTruncated(event.item_id, event.content_index, event.audio_end_ms));
   }
 
   /**
    * Handle conversation.item.delete event
    */
-  async deleteConversationItem(
-    event: RT.ConversationItemDeleteEvent,
-  ): Promise<void> {
-    const index = this.realtimeSession.conversationItems.findIndex(
-      (i) => i.id === event.item_id,
-    );
+  async deleteConversationItem(event: RT.ConversationItemDeleteEvent): Promise<void> {
+    const index = this.realtimeSession.conversationItems.findIndex((i) => i.id === event.item_id);
 
     if (index === -1) {
       this.send(
@@ -494,31 +506,23 @@ export class RealtimeSessionManager {
     this.realtimeSession.conversationItems.splice(index, 1);
 
     // Also remove from connection.state.messages so the graph doesn't see it
-    const connection = this.inworldApp.connections[this.sessionKey];
+    const connection = this.realtimeApp.connections[this.sessionKey];
     if (connection?.state?.messages) {
-      const messageIndex = connection.state.messages.findIndex(
-        (m) => m.id === event.item_id,
-      );
+      const messageIndex = connection.state.messages.findIndex((m) => m.id === event.item_id);
       if (messageIndex !== -1) {
         connection.state.messages.splice(messageIndex, 1);
       }
     }
 
     // Send the deleted event
-    this.send(
-      RealtimeEventFactory.conversationItemDeleted(event.item_id),
-    );
+    this.send(RealtimeEventFactory.conversationItemDeleted(event.item_id));
   }
 
   /**
    * Handle conversation.item.retrieve event
    */
-  async retrieveConversationItem(
-    event: RT.ConversationItemRetrieveEvent,
-  ): Promise<void> {
-    const item = this.realtimeSession.conversationItems.find(
-      (i) => i.id === event.item_id,
-    );
+  async retrieveConversationItem(event: RT.ConversationItemRetrieveEvent): Promise<void> {
+    const item = this.realtimeSession.conversationItems.find((i) => i.id === event.item_id);
 
     if (!item) {
       this.send(
@@ -533,9 +537,6 @@ export class RealtimeSessionManager {
     }
 
     // Send the retrieved item
-    this.send(
-      RealtimeEventFactory.conversationItemRetrieved(item),
-    );
+    this.send(RealtimeEventFactory.conversationItemRetrieved(item));
   }
 }
-

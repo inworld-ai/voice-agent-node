@@ -3,7 +3,8 @@
  * Based on the OpenAI Realtime API specification
  */
 
-import { GraphTypes } from '@inworld/runtime/graph';
+import { GraphTypes, LLMSelectionConfig, TextGenerationConfig } from '@inworld/runtime/graph';
+import { Tool, ToolChoice } from '@inworld/runtime/primitives/llm';
 
 // ============================================================================
 // Client Events (sent from client to server)
@@ -145,16 +146,14 @@ export interface InputAudioBufferSpeechStoppedEvent extends ServerEventBase {
   item_id: string;
 }
 
-export interface ConversationItemInputAudioTranscriptionDeltaEvent
-  extends ServerEventBase {
+export interface ConversationItemInputAudioTranscriptionDeltaEvent extends ServerEventBase {
   type: 'conversation.item.input_audio_transcription.delta';
   item_id: string;
   content_index: number;
   delta: string;
 }
 
-export interface ConversationItemInputAudioTranscriptionCompletedEvent
-  extends ServerEventBase {
+export interface ConversationItemInputAudioTranscriptionCompletedEvent extends ServerEventBase {
   type: 'conversation.item.input_audio_transcription.completed';
   item_id: string;
   content_index: number;
@@ -165,7 +164,6 @@ export interface ResponseCreatedEvent extends ServerEventBase {
   type: 'response.created';
   response: Response;
 }
-
 
 export interface ResponseDoneEvent extends ServerEventBase {
   type: 'response.done';
@@ -363,23 +361,16 @@ export interface SessionConfig {
     output?: Partial<AudioOutputConfig>;
   };
   tools?: Tool[];
-  tool_choice?: 'auto' | 'none' | 'required';
+  toolChoice?: ToolChoice;
   temperature?: number;
   max_output_tokens?: number | 'inf';
   truncation?: 'auto' | 'disabled';
   prompt?: string | null;
   tracing?: string | null;
   include?: string[] | null;
-  model_id?: {
-    provider: string;
-    modelName: string;
-  };
-  model_selection?: {
-    ignore?: { provider: string; modelName: string }[];
-    models?: { provider: string; modelName: string }[];
-    sort?: { direction: string; metric: string }[];
-  };
-  text_generation_config?: TextGenerationConfig;
+  modelId?: string;
+  modelSelection?: LLMSelectionConfig;
+  textGenerationConfig?: TextGenerationConfig;
 }
 
 export interface Session {
@@ -393,22 +384,15 @@ export interface Session {
     output: AudioOutputConfig;
   };
   tools: Tool[];
-  tool_choice: 'auto' | 'none' | 'required';
+  toolChoice: ToolChoice;
   temperature: number;
   max_output_tokens: number | 'inf';
   truncation: 'auto' | 'disabled';
   prompt: string | null;
   tracing: string | null;
-  model_id?: {
-    provider: string;
-    modelName: string;
-  };
-  model_selection?: {
-    ignore?: { provider: string; modelName: string }[];
-    models?: { provider: string; modelName: string }[];
-    sort?: { direction: string; metric: string }[];
-  };
-  text_generation_config?: TextGenerationConfig;
+  modelId?: string;
+  modelSelection?: LLMSelectionConfig;
+  textGenerationConfig?: TextGenerationConfig;
   expires_at: number;
   include: string[] | null;
 }
@@ -432,31 +416,6 @@ export interface SemanticVADTurnDetection {
 }
 
 export type TurnDetection = ServerVADTurnDetection | SemanticVADTurnDetection;
-
-export interface LogitBias {
-  token: number;
-  bias: number;
-}
-
-export interface TextGenerationConfig {
-  frequencyPenalty?: number;
-  logitBias?: LogitBias[];
-  maxNewTokens?: number;
-  maxPromptLength?: number;
-  presencePenalty?: number;
-  repetitionPenalty?: number;
-  seed?: number;
-  stopSequences?: string[];
-  temperature?: number;
-  topP?: number;
-}
-
-export interface Tool {
-  type: 'function';
-  name: string;
-  description?: string;
-  parameters?: Record<string, any>;
-}
 
 export interface ConversationItem {
   id?: string;

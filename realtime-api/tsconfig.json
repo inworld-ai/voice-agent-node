@@ -5,6 +5,7 @@
     "moduleResolution": "node16",
     "noImplicitAny": true,
     "resolveJsonModule": true,
+    "skipLibCheck": true,
     "target": "es6",
     "types": ["node"],
     "outDir": "./dist",
@@ -20,6 +21,6 @@
       "@inworld/runtime/telemetry": ["./node_modules/@inworld/runtime/build/telemetry/export"]
     }
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "components", "index.ts", "prompts"]
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }

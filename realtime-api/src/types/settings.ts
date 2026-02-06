@@ -16,7 +16,7 @@ export interface AssemblyAITurnDetectionSettings {
  * @returns AssemblyAI turn detection settings including threshold values and description
  */
 export function getAssemblyAISettingsForEagerness(
-  eagerness: 'low' | 'medium' | 'high' = 'medium'
+  eagerness: 'low' | 'medium' | 'high' = 'medium',
 ): AssemblyAITurnDetectionSettings {
   switch (eagerness) {
     case 'high': // Aggressive - VERY responsive
@@ -42,4 +42,3 @@ export function getAssemblyAISettingsForEagerness(
       };
   }
 }
-

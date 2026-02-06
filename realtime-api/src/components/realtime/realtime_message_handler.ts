@@ -1,12 +1,13 @@
 import { RawData } from 'ws';
+
+import { IRealtimeApp } from '../../interfaces/app';
+import { formatContext } from '../../log-helpers';
 import logger from '../../logger';
-import { formatContext, formatSession, formatError } from '../../log-helpers';
 import * as RT from '../../types/realtime';
-import { InworldApp } from '../app';
-import { RealtimeEventFactory } from './realtime_event_factory';
-import { RealtimeSessionManager } from './realtime_session_manager';
 import { RealtimeAudioHandler } from '../audio/realtime_audio_handler';
 import { RealtimeGraphExecutor } from '../graphs/realtime_graph_executor';
+import { RealtimeEventFactory } from './realtime_event_factory';
+import { RealtimeSessionManager } from './realtime_session_manager';
 
 export class RealtimeMessageHandler {
   private sessionManager: RealtimeSessionManager;
@@ -17,30 +18,44 @@ export class RealtimeMessageHandler {
   private sessionStartTime: number = Date.now();
 
   constructor(
-    private inworldApp: InworldApp,
+    private realtimeApp: IRealtimeApp,
     private sessionKey: string,
     private send: (data: RT.ServerEvent) => void,
   ) {
-    this.sessionManager = new RealtimeSessionManager(inworldApp, sessionKey, send, this.sessionStartTime);
-    this.graphExecutor = new RealtimeGraphExecutor(inworldApp, sessionKey, send, this.sessionManager, this.sessionStartTime);
-    this.audioHandler = new RealtimeAudioHandler(inworldApp, sessionKey, send, this.graphExecutor, this.sessionManager);
+    this.sessionManager = new RealtimeSessionManager(realtimeApp, sessionKey, send, this.sessionStartTime);
+    this.graphExecutor = new RealtimeGraphExecutor(
+      realtimeApp,
+      sessionKey,
+      send,
+      this.sessionManager,
+      this.sessionStartTime,
+    );
+    this.audioHandler = new RealtimeAudioHandler(
+      realtimeApp,
+      sessionKey,
+      send,
+      this.graphExecutor,
+      this.sessionManager,
+    );
   }
 
   async initialize(): Promise<void> {
-    const connection = this.inworldApp.connections[this.sessionKey];
+    const connection = this.realtimeApp.connections[this.sessionKey];
     if (connection) {
       connection.state.voiceId = this.sessionManager.getSession().session.audio.output.voice;
 
       connection.onSpeechDetected = (interactionId: string) => {
         logger.info(
           { interactionId, sessionId: this.sessionKey },
-          `Speech detected ${formatContext(this.sessionKey, undefined, interactionId)}`
+          `Speech detected ${formatContext(this.sessionKey, undefined, interactionId)}`,
         );
 
-        this.send(RealtimeEventFactory.inputAudioBufferSpeechStarted(
-          Date.now() - this.sessionStartTime, // audio_start_ms
-          interactionId // item_id
-        ));
+        this.send(
+          RealtimeEventFactory.inputAudioBufferSpeechStarted(
+            Date.now() - this.sessionStartTime, // audio_start_ms
+            interactionId, // item_id
+          ),
+        );
       };
 
       // Partial transcript callback
@@ -63,10 +78,13 @@ export class RealtimeMessageHandler {
 
       // 1. Cancellation - needs to stop ongoing response generation immediately
       if (event.type === 'response.cancel') {
-        logger.info({
-          sessionId: this.sessionKey,
-          responseId: event.response_id,
-        }, `Cancelling response with id: ${event.response_id}`);
+        logger.info(
+          {
+            sessionId: this.sessionKey,
+            responseId: event.response_id,
+          },
+          `Cancelling response with id: ${event.response_id}`,
+        );
         this.graphExecutor.cancelCurrentResponse('client_cancelled');
         return;
       }
@@ -114,7 +132,10 @@ export class RealtimeMessageHandler {
               break;
 
             default:
-              logger.warn({ eventType: (event as any).type, sessionId: this.sessionKey }, `Unknown event type: ${(event as any).type}`);
+              logger.warn(
+                { eventType: (event as any).type, sessionId: this.sessionKey },
+                `Unknown event type: ${(event as any).type}`,
+              );
           }
         } catch (error) {
           logger.error({ err: error, sessionId: this.sessionKey }, 'Error handling queued message');

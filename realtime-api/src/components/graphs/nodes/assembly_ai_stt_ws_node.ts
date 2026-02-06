@@ -1,12 +1,12 @@
 import { DataStreamWithMetadata } from '@inworld/runtime';
 import { CustomNode, GraphTypes, ProcessContext } from '@inworld/runtime/graph';
-import WebSocket from 'ws';
 import { v4 as uuidv4 } from 'uuid';
+import WebSocket from 'ws';
 
+import { formatSession } from '../../../log-helpers';
+import logger from '../../../logger';
 import { Connection } from '../../../types/index';
 import { getAssemblyAISettingsForEagerness } from '../../../types/settings';
-import logger from '../../../logger';
-import { formatSession, formatContext, formatError } from '../../../log-helpers';
 import { float32ToPCM16 } from '../../audio/audio_utils';
 
 /**
@@ -42,39 +42,37 @@ class AssemblyAISession {
   private wsReady: boolean = false;
   private wsConnectionPromise: Promise<void> | null = null;
 
-  public assemblySessionId: string = '';
-  public sessionExpiresAt: number = 0;
-  public shouldStopProcessing: boolean = false;
+  assemblySessionId: string = '';
+  sessionExpiresAt: number = 0;
+  shouldStopProcessing: boolean = false;
 
   private inactivityTimeout: NodeJS.Timeout | null = null;
   private lastActivityTime: number = Date.now();
   private readonly INACTIVITY_TIMEOUT_MS = 60000; // 60 seconds
 
   constructor(
-    public readonly sessionId: string,
+    readonly sessionId: string,
     private apiKey: string,
     private url: string,
-    private onCleanup: (sessionId: string) => void
+    private onCleanup: (sessionId: string) => void,
   ) {}
 
   /**
    * Ensure WebSocket connection is ready, reconnecting if needed
    */
-  public async ensureConnection(): Promise<void> {
+  async ensureConnection(): Promise<void> {
     // Check if connection is expired
     const now = Math.floor(Date.now() / 1000);
     const isExpired = this.sessionExpiresAt > 0 && now >= this.sessionExpiresAt;
 
-    if (
-      !this.ws ||
-      !this.wsReady ||
-      this.ws.readyState !== WebSocket.OPEN ||
-      isExpired
-    ) {
+    if (!this.ws || !this.wsReady || this.ws.readyState !== WebSocket.OPEN || isExpired) {
       if (isExpired) {
         logger.info({ sessionId: this.sessionId }, 'AssemblyAI session expired, reconnecting');
       } else if (this.ws) {
-        logger.info({ sessionId: this.sessionId, readyState: this.ws.readyState }, `AssemblyAI connection not ready [state:${this.ws.readyState}], reconnecting`);
+        logger.info(
+          { sessionId: this.sessionId, readyState: this.ws.readyState },
+          `AssemblyAI connection not ready [state:${this.ws.readyState}], reconnecting`,
+        );
       } else {
         logger.info({ sessionId: this.sessionId }, 'AssemblyAI connecting');
       }
@@ -121,13 +119,16 @@ class AssemblyAISession {
           if (message.type === 'Begin') {
             this.assemblySessionId = message.id || message.session_id || '';
             this.sessionExpiresAt = message.expires_at || 0;
-            logger.info({
-              sessionId: this.sessionId,
-              assemblySessionId: this.assemblySessionId,
-              expiresAt: this.sessionExpiresAt ? new Date(this.sessionExpiresAt * 1000).toISOString() : 'unknown',
-            }, `AssemblyAI session began ${formatSession(this.sessionId)} [assembly:${this.assemblySessionId}]`);
+            logger.info(
+              {
+                sessionId: this.sessionId,
+                assemblySessionId: this.assemblySessionId,
+                expiresAt: this.sessionExpiresAt ? new Date(this.sessionExpiresAt * 1000).toISOString() : 'unknown',
+              },
+              `AssemblyAI session began ${formatSession(this.sessionId)} [assembly:${this.assemblySessionId}]`,
+            );
           }
-        } catch (error) {
+        } catch (_error) {
           // Ignore parsing errors here, they might be handled by other listeners
         }
       });
@@ -139,11 +140,14 @@ class AssemblyAISession {
       });
 
       this.ws.on('close', (code: number, reason: Buffer) => {
-        logger.info({
-          sessionId: this.sessionId,
-          code,
-          reason: reason.toString(),
-        }, `AssemblyAI WebSocket closed ${formatSession(this.sessionId)} [code:${code}] [reason:${reason.toString()}]`);
+        logger.info(
+          {
+            sessionId: this.sessionId,
+            code,
+            reason: reason.toString(),
+          },
+          `AssemblyAI WebSocket closed ${formatSession(this.sessionId)} [code:${code}] [reason:${reason.toString()}]`,
+        );
         this.wsReady = false;
       });
     });
@@ -152,7 +156,7 @@ class AssemblyAISession {
   /**
    * Add a message listener
    */
-  public onMessage(listener: (data: WebSocket.Data) => void): void {
+  onMessage(listener: (data: WebSocket.Data) => void): void {
     if (this.ws) {
       this.ws.on('message', listener);
     }
@@ -161,7 +165,7 @@ class AssemblyAISession {
   /**
    * Remove a message listener
    */
-  public offMessage(listener: (data: WebSocket.Data) => void): void {
+  offMessage(listener: (data: WebSocket.Data) => void): void {
     if (this.ws) {
       this.ws.off('message', listener);
     }
@@ -170,7 +174,7 @@ class AssemblyAISession {
   /**
    * Send audio data
    */
-  public sendAudio(pcm16Data: Int16Array): void {
+  sendAudio(pcm16Data: Int16Array): void {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(Buffer.from(pcm16Data.buffer));
       this.resetInactivityTimer();
@@ -182,7 +186,7 @@ class AssemblyAISession {
   /**
    * Update turn detection configuration on the active WebSocket connection
    */
-  public updateConfiguration(config: {
+  updateConfiguration(config: {
     endOfTurnConfidenceThreshold?: number;
     minEndOfTurnSilenceWhenConfident?: number;
     maxTurnSilence?: number;
@@ -203,12 +207,14 @@ class AssemblyAISession {
       }
 
       this.ws.send(JSON.stringify(updateMessage));
-      logger.info({ sessionId: this.sessionId, config: updateMessage }, `AssemblyAI configuration updated ${formatSession(this.sessionId)}`);
+      logger.info(
+        { sessionId: this.sessionId, config: updateMessage },
+        `AssemblyAI configuration updated ${formatSession(this.sessionId)}`,
+      );
     } else {
       logger.warn({ sessionId: this.sessionId }, 'AssemblyAI cannot update config: WebSocket not open');
     }
   }
-
 
   /**
    * Reset the inactivity timer
@@ -229,7 +235,10 @@ class AssemblyAISession {
    */
   private closeDueToInactivity(): void {
     const inactiveFor = Date.now() - this.lastActivityTime;
-    logger.info({ sessionId: this.sessionId, inactiveFor }, `AssemblyAI closing due to inactivity ${formatSession(this.sessionId)} [inactive:${inactiveFor}ms]`);
+    logger.info(
+      { sessionId: this.sessionId, inactiveFor },
+      `AssemblyAI closing due to inactivity ${formatSession(this.sessionId)} [inactive:${inactiveFor}ms]`,
+    );
 
     this.shouldStopProcessing = true;
     this.close();
@@ -258,7 +267,7 @@ class AssemblyAISession {
   /**
    * Gracefully close the session
    */
-  public async close(): Promise<void> {
+  async close(): Promise<void> {
     if (this.inactivityTimeout) {
       clearTimeout(this.inactivityTimeout);
     }
@@ -267,7 +276,7 @@ class AssemblyAISession {
       try {
         this.ws.send(JSON.stringify({ type: 'Terminate' }));
         await new Promise((resolve) => setTimeout(resolve, 100));
-      } catch (e) {
+      } catch (_e) {
         // Ignore error on send
       }
     }
@@ -304,10 +313,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
   private readonly TURN_COMPLETION_TIMEOUT_MS = 2000;
   private readonly MAX_TRANSCRIPTION_DURATION_MS = 40000;
 
-  constructor(props: {
-    id?: string;
-    config: AssemblyAISTTWebSocketNodeConfig;
-  }) {
+  constructor(props: { id?: string; config: AssemblyAISTTWebSocketNodeConfig }) {
     const { config, ...nodeProps } = props;
 
     if (!config.apiKey) {
@@ -315,9 +321,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
     }
 
     if (!config.connections) {
-      throw new Error(
-        'AssemblyAISTTWebSocketNode requires a connections object.',
-      );
+      throw new Error('AssemblyAISTTWebSocketNode requires a connections object.');
     }
 
     super({
@@ -325,10 +329,8 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       executionConfig: {
         sampleRate: config.sampleRate || 16000,
         formatTurns: config.formatTurns !== false,
-        endOfTurnConfidenceThreshold:
-          config.endOfTurnConfidenceThreshold || 0.4,
-        minEndOfTurnSilenceWhenConfident:
-          config.minEndOfTurnSilenceWhenConfident || 400,
+        endOfTurnConfidenceThreshold: config.endOfTurnConfidenceThreshold || 0.4,
+        minEndOfTurnSilenceWhenConfident: config.minEndOfTurnSilenceWhenConfident || 400,
         maxTurnSilence: config.maxTurnSilence || 1280,
         language: config.language || 'en',
       },
@@ -338,23 +340,24 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
     this.connections = config.connections;
     this.sampleRate = config.sampleRate || 16000;
     this.formatTurns = config.formatTurns !== false;
-    this.endOfTurnConfidenceThreshold =
-      config.endOfTurnConfidenceThreshold || 0.4;
-    this.minEndOfTurnSilenceWhenConfident =
-      config.minEndOfTurnSilenceWhenConfident || 400;
+    this.endOfTurnConfidenceThreshold = config.endOfTurnConfidenceThreshold || 0.4;
+    this.minEndOfTurnSilenceWhenConfident = config.minEndOfTurnSilenceWhenConfident || 400;
     this.maxTurnSilence = config.maxTurnSilence || 1280;
     this.language = config.language || 'en';
     this.keytermsPrompt = config.keytermsPrompt || [];
 
     // Log the turn detection settings being used
-    logger.info({
-      endOfTurnConfidenceThreshold: this.endOfTurnConfidenceThreshold,
-      minEndOfTurnSilenceWhenConfident: this.minEndOfTurnSilenceWhenConfident,
-      maxTurnSilence: this.maxTurnSilence,
-      sampleRate: this.sampleRate,
-      formatTurns: this.formatTurns,
-      language: this.language,
-    }, `AssemblyAI configured [threshold:${this.endOfTurnConfidenceThreshold}] [silence:${this.minEndOfTurnSilenceWhenConfident}ms] [lang:${this.language}]`);
+    logger.info(
+      {
+        endOfTurnConfidenceThreshold: this.endOfTurnConfidenceThreshold,
+        minEndOfTurnSilenceWhenConfident: this.minEndOfTurnSilenceWhenConfident,
+        maxTurnSilence: this.maxTurnSilence,
+        sampleRate: this.sampleRate,
+        formatTurns: this.formatTurns,
+        language: this.language,
+      },
+      `AssemblyAI configured [threshold:${this.endOfTurnConfidenceThreshold}] [silence:${this.minEndOfTurnSilenceWhenConfident}ms] [lang:${this.language}]`,
+    );
   }
 
   /**
@@ -400,21 +403,23 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
 
     const url = `${this.wsEndpointBaseUrl}?${params.toString()}`;
 
-    logger.info({
-      sessionId,
-      endOfTurnConfidenceThreshold: endOfTurnThreshold,
-      minEndOfTurnSilenceWhenConfident: minSilenceWhenConfident,
-      maxTurnSilence: maxSilence,
-    }, `AssemblyAI connecting ${formatSession(sessionId)} [threshold:${endOfTurnThreshold}] [silence:${minSilenceWhenConfident}ms]`);
+    logger.info(
+      {
+        sessionId,
+        endOfTurnConfidenceThreshold: endOfTurnThreshold,
+        minEndOfTurnSilenceWhenConfident: minSilenceWhenConfident,
+        maxTurnSilence: maxSilence,
+      },
+      `AssemblyAI connecting ${formatSession(sessionId)} [threshold:${endOfTurnThreshold}] [silence:${minSilenceWhenConfident}ms]`,
+    );
 
     return url;
   }
 
-
   /**
    * Process multimodal stream (audio and/or text) and transcribe using Assembly.AI WebSocket
    * For audio: extracts audio from MultimodalContent and sends to Assembly.AI
-   * For text: currently not handled (text input should bypass STT)
+   * For text: force a turn ending event with transcript being the input
    */
   async process(
     context: ProcessContext,
@@ -423,9 +428,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
   ): Promise<DataStreamWithMetadata> {
     // Extract MultimodalContent stream from either input type
     const multimodalStream =
-      input !== undefined &&
-      input !== null &&
-      input instanceof DataStreamWithMetadata
+      input !== undefined && input !== null && input instanceof DataStreamWithMetadata
         ? (input.toStream() as any as AsyncIterableIterator<GraphTypes.MultimodalContent>)
         : input0;
 
@@ -447,7 +450,10 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
     // If interactionId is empty, assign a UUID
     if (!connection.state.interactionId || connection.state.interactionId === '') {
       connection.state.interactionId = uuidv4();
-      logger.info({ sessionId, interactionId: connection.state.interactionId }, 'AssemblyAI assigned new UUID for empty interactionId');
+      logger.info(
+        { sessionId, interactionId: connection.state.interactionId },
+        'AssemblyAI assigned new UUID for empty interactionId',
+      );
     }
 
     const currentId = connection.state.interactionId;
@@ -462,10 +468,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
     }
 
     const iteration = previousIteration + 1;
-    const baseId =
-      delimiterIndex !== -1
-        ? currentId.substring(0, delimiterIndex)
-        : currentId;
+    const baseId = delimiterIndex !== -1 ? currentId.substring(0, delimiterIndex) : currentId;
     const nextInteractionId = `${baseId}#${iteration}`;
 
     logger.info({ sessionId, iteration }, `AssemblyAI starting transcription [iteration:${iteration}]`);
@@ -491,7 +494,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         sessionId,
         this.apiKey,
         this.buildWebSocketUrl(sessionId), // Pass sessionId to get dynamic eagerness settings
-        (id) => this.sessions.delete(id)
+        (id) => this.sessions.delete(id),
       );
       this.sessions.set(sessionId, session);
     }
@@ -534,7 +537,10 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
               this.sendPartialTranscript(sessionId, nextInteractionId, textToSend);
 
               if (connection?.onSpeechDetected && !speechDetected) {
-                logger.info({ sessionId, iteration, interactionId: nextInteractionId }, `AssemblyAI speech detected [iteration:${iteration}]`);
+                logger.info(
+                  { sessionId, iteration, interactionId: nextInteractionId },
+                  `AssemblyAI speech detected [iteration:${iteration}]`,
+                );
                 speechDetected = true;
                 connection.onSpeechDetected(nextInteractionId);
               }
@@ -543,18 +549,26 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
           }
 
           // Final transcript
-          logger.info({ sessionId, iteration, transcript }, `AssemblyAI turn detected ${formatSession(sessionId)} [iteration:${iteration}]: "${transcript.substring(0, 50)}..."`);
+          logger.info(
+            { sessionId, iteration, transcript },
+            `AssemblyAI turn detected ${formatSession(sessionId)} [iteration:${iteration}]: "${transcript.substring(0, 50)}..."`,
+          );
 
           transcriptText = transcript;
           turnDetected = true;
           if (session) session.shouldStopProcessing = true;
           turnResolve(transcript);
-
         } else if (msgType === 'Termination') {
-          logger.info({ sessionId, iteration }, `AssemblyAI session terminated ${formatSession(sessionId)} [iteration:${iteration}]`);
+          logger.info(
+            { sessionId, iteration },
+            `AssemblyAI session terminated ${formatSession(sessionId)} [iteration:${iteration}]`,
+          );
         }
       } catch (error) {
-        logger.error({ err: error, sessionId, iteration }, `AssemblyAI error handling message [iteration:${iteration}]`);
+        logger.error(
+          { err: error, sessionId, iteration },
+          `AssemblyAI error handling message [iteration:${iteration}]`,
+        );
       }
     };
 
@@ -571,7 +585,6 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         try {
           logger.debug({ sessionId, iteration }, 'AssemblyAI WS STT - Starting multimodal processing loop');
 
-
           // Safety timer: prevent infinite loops if no turn is detected
           maxDurationTimeout = setTimeout(() => {
             maxDurationReached = true; // Ensure maximum process() execution length doesn't exceed 40. If the player with an active mic does not speak for 60s, the node executor will error out thinking it's a zombie node
@@ -585,7 +598,10 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
 
             if (maxDurationReached) {
               if (!transcriptText) {
-                logger.warn({ sessionId, iteration }, `AssemblyAI max transcription duration reached [limit:${this.MAX_TRANSCRIPTION_DURATION_MS}ms]`);
+                logger.warn(
+                  { sessionId, iteration },
+                  `AssemblyAI max transcription duration reached [limit:${this.MAX_TRANSCRIPTION_DURATION_MS}ms]`,
+                );
                 break;
               }
             }
@@ -593,8 +609,13 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
             const result = await multimodalStream.next();
 
             if (result.done) {
-              logger.info({ sessionId, iteration, audioChunkCount }, `AssemblyAI multimodal stream exhausted [iteration:${iteration}] [chunks:${audioChunkCount}]`);
+              logger.info(
+                { sessionId, iteration, audioChunkCount },
+                `AssemblyAI multimodal stream exhausted [iteration:${iteration}] [chunks:${audioChunkCount}]`,
+              );
               isStreamExhausted = true;
+
+              connection.multimodalStreamManager.end();
               break;
             }
 
@@ -604,7 +625,10 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
 
             // Handle text input - immediately simulate turn detection
             if (content.text !== undefined && content.text !== null) {
-              logger.info({ sessionId, iteration, text: content.text }, `AssemblyAI text input detected [iteration:${iteration}]: "${content.text.substring(0, 50)}..."`);
+              logger.info(
+                { sessionId, iteration, text: content.text },
+                `AssemblyAI text input detected [iteration:${iteration}]: "${content.text.substring(0, 50)}..."`,
+              );
               isTextInput = true;
               textContent = content.text;
               transcriptText = content.text;
@@ -628,7 +652,11 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
             // Convert to Float32Array if needed
             const float32Data = Array.isArray(audioData)
               ? new Float32Array(audioData)
-              : audioData;
+              : new Float32Array(
+                  audioData.buffer,
+                  audioData.byteOffset,
+                  audioData.byteLength / Float32Array.BYTES_PER_ELEMENT,
+                );
 
             audioChunkCount++;
             totalAudioSamples += float32Data.length;
@@ -638,11 +666,14 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
             session?.sendAudio(pcm16Data);
 
             if (audioChunkCount % 20 === 0) {
-               // Heartbeat log
+              // Heartbeat log
             }
           }
         } catch (error) {
-          logger.error({ err: error, sessionId, iteration }, `AssemblyAI error processing audio [iteration:${iteration}]`);
+          logger.error(
+            { err: error, sessionId, iteration },
+            `AssemblyAI error processing audio [iteration:${iteration}]`,
+          );
           errorOccurred = true;
           errorMessage = error instanceof Error ? error.message : String(error);
           throw error;
@@ -658,8 +689,13 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         audioProcessingPromise.then(() => ({ winner: 'audio' as const })), // Audio will immediately win after the stream stops manually,
       ]);
 
-      if (raceResult.winner === 'audio' && !turnCompleted && !maxDurationReached) { // and if audio wins, we enter this race, as turnComplete is not here yet
-        logger.info({ sessionId, iteration, timeout: this.TURN_COMPLETION_TIMEOUT_MS }, `AssemblyAI audio ended before turn [iteration:${iteration}], waiting ${this.TURN_COMPLETION_TIMEOUT_MS}ms for transcript`);
+      if (raceResult.winner === 'audio' && !turnCompleted && !maxDurationReached && audioChunkCount != 0) {
+        // and if audio wins, we enter this race, as turnComplete is not here yet.
+        // We also do not run this routine when there's no preceding audio, indicating the stream was dealing with a text input
+        logger.info(
+          { sessionId, iteration, timeout: this.TURN_COMPLETION_TIMEOUT_MS },
+          `AssemblyAI audio ended before turn [iteration:${iteration}], waiting ${this.TURN_COMPLETION_TIMEOUT_MS}ms for transcript`,
+        );
 
         // Send 100ms of silence every 100ms to keep the connection alive/processing
         const silenceIntervalMs = 100;
@@ -693,11 +729,17 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       // Ensure the audio processing loop fully exits before returning
       await audioProcessingPromise.catch(() => {});
 
-      logger.info({ sessionId, iteration, transcript: transcriptText }, `AssemblyAI transcription complete [iteration:${iteration}]: "${transcriptText?.substring(0, 50)}..."`);
+      logger.info(
+        { sessionId, iteration, transcript: transcriptText },
+        `AssemblyAI transcription complete [iteration:${iteration}]: "${transcriptText?.substring(0, 50)}..."`,
+      );
 
       // Clear interactionId on turn completion
       if (turnDetected) {
-        logger.info({ sessionId, iteration, interactionId: nextInteractionId }, 'AssemblyAI clearing interactionId after turn completion');
+        logger.info(
+          { sessionId, iteration, interactionId: nextInteractionId },
+          'AssemblyAI clearing interactionId after turn completion',
+        );
         connection.state.interactionId = '';
       }
 
@@ -731,7 +773,6 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         is_interruption: false, // Not currently handling interruptions in this node
         text_content: textContent,
       });
-
     } catch (error) {
       logger.error({ err: error, sessionId, iteration }, `AssemblyAI transcription failed [iteration:${iteration}]`);
 
@@ -765,8 +806,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         is_interruption: false, // Not currently handling interruptions in this node
         text_content: textContent,
       });
-    }
-    finally {
+    } finally {
       // Clean up message handler after execution ends
       if (session) {
         session.offMessage(messageHandler);
@@ -777,11 +817,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
   /**
    * Send partial transcript update to the client for real-time feedback
    */
-  private sendPartialTranscript(
-    sessionId: string,
-    interactionId: string,
-    text: string,
-  ): void {
+  private sendPartialTranscript(sessionId: string, interactionId: string, text: string): void {
     const connection = this.connections[sessionId];
     if (!connection || !connection.ws) {
       return;
@@ -805,7 +841,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       endOfTurnConfidenceThreshold: number;
       minEndOfTurnSilenceWhenConfident: number;
       maxTurnSilence: number;
-    }
+    },
   ): void {
     const session = this.sessions.get(sessionId);
     if (!session) {
@@ -841,11 +877,14 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
    * Clean up resources
    */
   async destroy(): Promise<void> {
-    logger.info({ sessionCount: this.sessions.size }, `AssemblyAI destroying node: closing ${this.sessions.size} WebSocket connections`);
+    logger.info(
+      { sessionCount: this.sessions.size },
+      `AssemblyAI destroying node: closing ${this.sessions.size} WebSocket connections`,
+    );
 
     const promises: Promise<void>[] = [];
     for (const session of this.sessions.values()) {
-        promises.push(session.close());
+      promises.push(session.close());
     }
 
     await Promise.all(promises);

@@ -1,7 +1,6 @@
 import { CustomNode, ProcessContext } from '@inworld/runtime/graph';
-import logger from '../../../logger';
-import { formatSession, formatContext } from '../../../log-helpers';
 
+import logger from '../../../logger';
 import { ConnectionsMap, InteractionInfo, State, TextInput } from '../../../types/index';
 
 /**
@@ -21,11 +20,7 @@ import { ConnectionsMap, InteractionInfo, State, TextInput } from '../../../type
 export class InteractionQueueNode extends CustomNode {
   private connections: ConnectionsMap;
 
-  constructor(props?: {
-    id?: string;
-    connections?: ConnectionsMap;
-    reportToClient?: boolean;
-  }) {
+  constructor(props?: { id?: string; connections?: ConnectionsMap; reportToClient?: boolean }) {
     super({
       id: props?.id || 'interaction-queue-node',
       reportToClient: props?.reportToClient,
@@ -33,14 +28,10 @@ export class InteractionQueueNode extends CustomNode {
     this.connections = props?.connections || {};
   }
 
-  process(
-    context: ProcessContext,
-    interactionInfo: InteractionInfo,
-    state: State,
-  ): TextInput {
+  process(context: ProcessContext, interactionInfo: InteractionInfo, state: State): TextInput {
     const sessionId = interactionInfo.sessionId;
     logger.debug({ sessionId, interactionId: interactionInfo.interactionId }, 'InteractionQueueNode processing');
-    
+
     // Get current voiceId from connection state (in case it was updated via session.update)
     const connection = this.connections[sessionId];
     const currentVoiceId = connection?.state?.voiceId || state?.voiceId;
@@ -56,11 +47,11 @@ export class InteractionQueueNode extends CustomNode {
     // Register interaction in the queue
     if (!dataStore.has(QUEUED_PREFIX + interactionInfo.interactionId)) {
       // Store queued interaction
-      dataStore.add(
-        QUEUED_PREFIX + interactionInfo.interactionId,
-        interactionInfo.text,
+      dataStore.add(QUEUED_PREFIX + interactionInfo.interactionId, interactionInfo.text);
+      logger.info(
+        { sessionId, interactionId: interactionInfo.interactionId },
+        'InteractionQueue - New interaction queued',
       );
-      logger.info({ sessionId, interactionId: interactionInfo.interactionId }, 'InteractionQueue - New interaction queued');
     }
 
     // Get all keys and categorize them
@@ -91,12 +82,15 @@ export class InteractionQueueNode extends CustomNode {
       return getIteration(a) - getIteration(b);
     });
 
-    logger.debug({
-      sessionId,
-      queuedCount: queuedIds.length,
-      completedCount,
-      runningCount,
-    }, 'InteractionQueue - State');
+    logger.debug(
+      {
+        sessionId,
+        queuedCount: queuedIds.length,
+        completedCount,
+        runningCount,
+      },
+      'InteractionQueue - State',
+    );
 
     // ====================================================================
     // STEP 4: Decide if we should start processing the next interaction
@@ -156,7 +150,10 @@ export class InteractionQueueNode extends CustomNode {
         } as TextInput;
       }
 
-      logger.info({ sessionId, interactionId: nextId, text: queuedText.substring(0, 100) }, `InteractionQueue - Starting LLM processing: "${queuedText.substring(0, 50)}..."`);
+      logger.info(
+        { sessionId, interactionId: nextId, text: queuedText.substring(0, 100) },
+        `InteractionQueue - Starting LLM processing: "${queuedText.substring(0, 50)}..."`,
+      );
 
       return {
         text: queuedText,
@@ -166,7 +163,10 @@ export class InteractionQueueNode extends CustomNode {
       } as TextInput;
     } else {
       // An interaction is currently running, wait for it to complete
-      logger.debug({ sessionId, waitingForInteraction: queuedIds[completedCount] }, `InteractionQueue - Waiting for interaction [waiting for:${queuedIds[completedCount]}]`);
+      logger.debug(
+        { sessionId, waitingForInteraction: queuedIds[completedCount] },
+        `InteractionQueue - Waiting for interaction [waiting for:${queuedIds[completedCount]}]`,
+      );
       return {
         text: '',
         sessionId: sessionId,

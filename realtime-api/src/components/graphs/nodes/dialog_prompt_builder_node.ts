@@ -1,6 +1,6 @@
 import { CustomNode, GraphTypes, ProcessContext } from '@inworld/runtime/graph';
-import logger from '../../../logger';
 
+import logger from '../../../logger';
 import { State } from '../../../types/index';
 
 /**
@@ -14,7 +14,10 @@ import { State } from '../../../types/index';
 export class DialogPromptBuilderNode extends CustomNode {
   process(_context: ProcessContext, state: State): GraphTypes.LLMChatRequest {
     try {
-      logger.debug({ messageCount: state.messages?.length }, `DialogPromptBuilderNode start: ${state.messages?.length || 0} messages`);
+      logger.debug(
+        { messageCount: state.messages?.length },
+        `DialogPromptBuilderNode start: ${state.messages?.length || 0} messages`,
+      );
 
       // Convert state messages to LLMMessageInterface format
       // Filter out messages with empty content
@@ -41,7 +44,10 @@ export class DialogPromptBuilderNode extends CustomNode {
       };
 
       if (state.tools && Array.isArray(state.tools) && state.tools.length > 0) {
-        logger.debug({ toolCount: state.tools.length }, `DialogPromptBuilderNode processing ${state.tools.length} tools`);
+        logger.debug(
+          { toolCount: state.tools.length },
+          `DialogPromptBuilderNode processing ${state.tools.length} tools`,
+        );
 
         // Transform OpenAI Realtime API format to Inworld SDK format
         // OpenAI Realtime API: { type: 'function', name, description, parameters }
@@ -61,7 +67,10 @@ export class DialogPromptBuilderNode extends CustomNode {
             return tool;
           });
 
-        logger.debug({ toolCount: request.tools.length }, `DialogPromptBuilderNode converted ${request.tools.length} tools to Inworld format`);
+        logger.debug(
+          { toolCount: request.tools.length },
+          `DialogPromptBuilderNode converted ${request.tools.length} tools to Inworld format`,
+        );
 
         // Handle toolChoice - ensure it's in the right format
         if (state.toolChoice) {
@@ -77,7 +86,10 @@ export class DialogPromptBuilderNode extends CustomNode {
         logger.debug({ toolChoice: request.toolChoice }, `DialogPromptBuilderNode tool choice: ${request.toolChoice}`);
       }
 
-      logger.debug({ messageCount: conversationMessages.length }, `DialogPromptBuilderNode final request: ${conversationMessages.length} messages`);
+      logger.debug(
+        { messageCount: conversationMessages.length },
+        `DialogPromptBuilderNode final request: ${conversationMessages.length} messages`,
+      );
       return new GraphTypes.LLMChatRequest(request);
     } catch (error) {
       logger.error({ err: error }, 'DialogPromptBuilderNode fatal error');

@@ -2,12 +2,19 @@
 
 This server now supports the OpenAI Realtime API protocol for WebSocket-based real-time voice and audio interactions.
 
-## Protocol
+## Protocol Selection
 
-This server uses the OpenAI Realtime API protocol for all WebSocket connections. Connect to the WebSocket endpoint:
+The server previously supports two protocols:
+
+1. **Legacy Protocol** (default): The original custom protocol
+2. **Realtime Protocol**: OpenAI Realtime API compatible protocol
+
+The legacy protocol is no longer supported. We now support serving realtime events through OpenAI compatible API events with a few exceptions.
+
+To use the Realtime protocol, add `protocol=realtime` as a query parameter when connecting to the WebSocket:
 
 ```
-ws://YOUR_API_HOST:PORT/session?key=YOUR_SESSION_KEY
+ws://YOUR_API_HOST:PORT/session?protocol=realtime&key=YOUR_SESSION_KEY
 ```
 
 ## Connection Flow
@@ -15,10 +22,10 @@ ws://YOUR_API_HOST:PORT/session?key=YOUR_SESSION_KEY
 
 ### 1. Connect via WebSocket
 
-Connect to the WebSocket endpoint:
+Connect to the WebSocket endpoint with the Realtime protocol:
 
 ```javascript
-const ws = new WebSocket('ws://YOUR_API_HOST:PORT/session?key=YOUR_SESSION_KEY');
+const ws = new WebSocket('ws://YOUR_API_HOST:PORT/session?protocol=realtime&key=YOUR_SESSION_KEY');
 
 ws.onopen = () => {
   console.log('Connected');
@@ -131,11 +138,6 @@ ws.send(JSON.stringify({
 ws.send(JSON.stringify({
   type: 'input_audio_buffer.commit'
 }));
-
-// Clear the audio buffer
-ws.send(JSON.stringify({
-  type: 'input_audio_buffer.clear'
-}));
 ```
 
 ### Create a Text Message
@@ -230,7 +232,7 @@ As such, events that informs the client will be prepended to the above flow.
 ## Example: Simple Audio Conversation
 
 ```javascript
-const ws = new WebSocket('ws://localhost:4000/session?key=my-session');
+const ws = new WebSocket('ws://localhost:4000/session?key=my-session&protocol=realtime');
 
 ws.onmessage = (event) => {
   const msg = JSON.parse(event.data);
@@ -280,60 +282,33 @@ function sendAudioChunk(pcm16Data) {
 
 ## Configuration
 
-### Turn Detection (Voice Activity Detection)
+### Server VAD (Voice Activity Detection)
 
-By default, semantic VAD is enabled with these settings:
+By default, server VAD is enabled with these settings:
 
-- **type**: `'semantic_vad'` (default)
-- **eagerness**: `'medium'` (can be `'low'`, `'medium'`, `'high'`, or `'auto'`)
-- **create_response**: `true` (automatically create response when speech ends)
-- **interrupt_response**: `true` (allow interrupting ongoing responses)
-
-The eagerness level controls how quickly the server detects the end of speech:
-- **`'low'`**: Very patient, allows long thinking pauses (best for complex inquiries)
-- **`'medium'`**: Balanced, natural conversation flow (default, best for customer support)
-- **`'high'`**: Very responsive, quick responses (best for rapid Q&A, agent assist)
+- **threshold**: 0.5 (voice detection sensitivity)
+- **prefix_padding_ms**: 300 (audio to include before speech)
+- **silence_duration_ms**: 500 (silence duration to detect end of speech)
+- **create_response**: true (automatically create response when speech ends)
+- Alternatively, use eagerness for presets that fits different purposes. (`'low' | 'medium' | 'high'`) The higher eagerness, the more easily for the server to conclude your conversation round.
 
 You can update these settings using `session.update`:
 
 ```javascript
-// Update eagerness (semantic_vad - recommended)
 ws.send(JSON.stringify({
   type: 'session.update',
   session: {
-    audio: {
-      input: {
-        turn_detection: {
-          type: 'semantic_vad',
-          eagerness: 'high',  // or 'low', 'medium', 'high', 'auto'
-          create_response: true,
-          interrupt_response: false,
-        }
-      }
-    }
-  }
-}));
-
-// Or use server_vad with manual threshold settings
-ws.send(JSON.stringify({
-  type: 'session.update',
-  session: {
-    audio: {
-      input: {
-        turn_detection: {
-          type: 'server_vad',
-          threshold: 0.7,
-          silence_duration_ms: 800,
-          prefix_padding_ms: 300,
-          create_response: true,
-        }
-      }
+    turn_detection: {
+      type: 'server_vad',
+      threshold: 0.7,
+      silence_duration_ms: 800,
+      // eagerness: 'high',
     }
   }
 }));
 ```
 
-To disable turn detection:
+To disable server VAD:
 
 ```javascript
 ws.send(JSON.stringify({

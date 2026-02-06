@@ -1,5 +1,5 @@
-import { AudioChunkInterface } from '@inworld/runtime/common';
 import { GraphTypes } from '@inworld/runtime/graph';
+import { AudioChunk } from '@inworld/runtime/primitives/speech';
 
 import logger from '../../logger';
 
@@ -12,29 +12,25 @@ import logger from '../../logger';
  */
 export class MultimodalStreamManager {
   private queue: GraphTypes.MultimodalContent[] = [];
-  private waitingResolvers: Array<
-    (value: IteratorResult<GraphTypes.MultimodalContent>) => void
-  > = [];
+  private waitingResolvers: Array<(value: IteratorResult<GraphTypes.MultimodalContent>) => void> = [];
   private ended = false;
 
   /**
    * Add an audio chunk to the stream (wrapped in MultimodalContent)
    */
-  pushAudio(chunk: AudioChunkInterface): void {
+  pushAudio(chunk: AudioChunk): void {
     if (this.ended) {
       return;
     }
 
-    // Create GraphTypes.Audio object and wrap in MultimodalContent
-    const audioData = new GraphTypes.Audio({
-      data: Array.isArray(chunk.data) ? chunk.data : Array.from(chunk.data),
-      sampleRate: chunk.sampleRate,
-    });
-    const multimodalContent = new GraphTypes.MultimodalContent({
-      audio: audioData,
-    });
-
-    this.pushContent(multimodalContent);
+    this.pushContent(
+      new GraphTypes.MultimodalContent(
+        new GraphTypes.Audio({
+          data: chunk.data,
+          sampleRate: chunk.sampleRate,
+        }),
+      ),
+    );
   }
 
   /**
@@ -45,7 +41,7 @@ export class MultimodalStreamManager {
       return;
     }
 
-    const multimodalContent = new GraphTypes.MultimodalContent({ text });
+    const multimodalContent = new GraphTypes.MultimodalContent(text);
     this.pushContent(multimodalContent);
   }
 
@@ -102,9 +98,7 @@ export class MultimodalStreamManager {
       }
 
       // Otherwise, wait for new content
-      const result = await new Promise<
-        IteratorResult<GraphTypes.MultimodalContent>
-      >((resolve) => {
+      const result = await new Promise<IteratorResult<GraphTypes.MultimodalContent>>((resolve) => {
         this.waitingResolvers.push(resolve);
       });
 

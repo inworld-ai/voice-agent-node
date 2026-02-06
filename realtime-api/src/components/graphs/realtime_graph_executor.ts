@@ -1,16 +1,17 @@
-import { GraphOutputStream, GraphTypes } from '@inworld/runtime/graph';
+import { GraphTypes } from '@inworld/runtime/graph';
+import { ToolCall } from '@inworld/runtime/primitives/llm';
 import { v4 as uuidv4 } from 'uuid';
-import logger from '../../logger';
-import * as RT from '../../types/realtime';
-import { InworldApp } from '../app';
-import { RealtimeEventFactory } from '../realtime/realtime_event_factory';
-import { InworldGraphWrapper } from '../graphs/graph';
-import { Connection } from '../../types/index';
-import { convertToPCM16Base64 } from '../audio/audio_utils';
-import { ToolCallInterface } from "@inworld/runtime";
-import { RealtimeSessionManager } from '../realtime/realtime_session_manager';
-import { MultimodalStreamManager } from '../audio/multimodal_stream_manager';
+
 import { abortStream } from '../../helpers';
+import { IRealtimeApp } from '../../interfaces/app';
+import { IInworldGraph } from '../../interfaces/graph';
+import logger from '../../logger';
+import { Connection } from '../../types/index';
+import * as RT from '../../types/realtime';
+import { convertToPCM16Base64 } from '../audio/audio_utils';
+import { MultimodalStreamManager } from '../audio/multimodal_stream_manager';
+import { RealtimeEventFactory } from '../realtime/realtime_event_factory';
+import { RealtimeSessionManager } from '../realtime/realtime_session_manager';
 
 // Marker used to signal tool call continuation - the graph nodes recognize this
 // and skip adding a new user message, instead continuing with existing conversation state
@@ -23,30 +24,38 @@ export class RealtimeGraphExecutor {
   private partialTranscripts: Map<string, string> = new Map();
 
   constructor(
-    private inworldApp: InworldApp,
+    private realtimeApp: IRealtimeApp,
     private sessionKey: string,
     private send: (data: RT.ServerEvent) => void,
     private sessionManager: RealtimeSessionManager,
-    private sessionStartTime: number
-  ) { }
+    private sessionStartTime: number,
+  ) {}
 
   cancelCurrentResponse(reason: 'turn_detected' | 'client_cancelled'): void {
     const realtimeSession = this.sessionManager.getSession();
     if (!realtimeSession.currentResponse || this.isCancelled) {
       return; // Nothing to cancel or already cancelled
     }
-    logger.info({
-      sessionId: this.sessionKey,
-      reason,
-      responseId: realtimeSession.currentResponse.id,
-      ttsInteractionId: this.currentTTSInteractionId || 'none',
-    }, 'Response Cancellation');
+    logger.info(
+      {
+        sessionId: this.sessionKey,
+        reason,
+        responseId: realtimeSession.currentResponse.id,
+        ttsInteractionId: this.currentTTSInteractionId || 'none',
+      },
+      'Response Cancellation',
+    );
 
     this.isCancelled = true;
     const response = realtimeSession.currentResponse;
 
     // Abort active content and TTS streams
-    abortStream(realtimeSession.currentContentStream, 'content stream', this.sessionKey, 'due to response cancellation');
+    abortStream(
+      realtimeSession.currentContentStream,
+      'content stream',
+      this.sessionKey,
+      'due to response cancellation',
+    );
     realtimeSession.currentContentStream = null;
 
     abortStream(realtimeSession.currentTTSStream, 'TTS stream', this.sessionKey, 'due to response cancellation');
@@ -74,7 +83,7 @@ export class RealtimeGraphExecutor {
     workspaceId: string;
     apiKey: string;
     input: { sessionId: string; state: any };
-    graphWrapper: InworldGraphWrapper;
+    graphWrapper: IInworldGraph;
     multimodalStreamManager: MultimodalStreamManager;
   }): Promise<void> {
     // Create a multimodal stream generator that yields MultimodalContent
@@ -97,7 +106,7 @@ export class RealtimeGraphExecutor {
       },
       userContext: {
         attributes: {
-          "inworld.tenant": workspaceId,
+          'inworld.tenant': workspaceId,
         },
         targetingKey: uuidv4(),
       },
@@ -106,7 +115,7 @@ export class RealtimeGraphExecutor {
       },
     });
 
-    const connection = this.inworldApp.connections[sessionId];
+    const connection = this.realtimeApp.connections[sessionId];
     if (!connection) {
       logger.debug({ sessionId }, 'Connection no longer exists, aborting audio graph execution');
       outputStream.abort();
@@ -128,10 +137,13 @@ export class RealtimeGraphExecutor {
         // Check if result contains an error
         if (result && result.isGraphError && result.isGraphError()) {
           const errorData = result.data;
-          logger.error({
-            sessionId,
-            err: errorData,
-          }, 'Graph error');
+          logger.error(
+            {
+              sessionId,
+              err: errorData,
+            },
+            'Graph error',
+          );
           if (!errorData.message.includes('recognition produced no text')) {
             this.send(
               RealtimeEventFactory.error({
@@ -140,11 +152,14 @@ export class RealtimeGraphExecutor {
               }),
             );
             if (errorData.code === 4) {
-              const connection = this.inworldApp.connections[sessionId];
+              const connection = this.realtimeApp.connections[sessionId];
               if (connection?.ws) {
                 // Close the websocket connection
                 // Using code 1011 (Internal Error) as it's a server-side error
-                connection.ws.close(1011, 'JS Call Timeout. We will end the call if the audio stream is not active in 60 seconds.');
+                connection.ws.close(
+                  1011,
+                  'JS Call Timeout. We will end the call if the audio stream is not active in 60 seconds.',
+                );
               }
             }
           }
@@ -152,12 +167,7 @@ export class RealtimeGraphExecutor {
         }
 
         // Process the result - this will handle transcription, LLM response, and TTS
-        await this.processAudioGraphOutput(
-          result,
-          connection,
-          sessionId,
-          currentGraphInteractionId,
-        );
+        await this.processAudioGraphOutput(result, connection, sessionId, currentGraphInteractionId);
       }
 
       logger.info({ sessionId, resultCount }, `Audio stream processing complete: ${resultCount} interactions`);
@@ -166,13 +176,14 @@ export class RealtimeGraphExecutor {
       throw error;
     } finally {
       // Clear the stream reference when done (if connection still exists)
-      const conn = this.inworldApp.connections[sessionId];
+      const conn = this.realtimeApp.connections[sessionId];
       if (conn && conn.currentAudioExecutionStream === outputStream) {
         conn.currentAudioExecutionStream = undefined;
       }
       // Clean up stream manager
-      connection.multimodalStreamManager = undefined;
-      connection.currentAudioGraphExecution = undefined;
+      // console.log("Cleaning up stream manager") // Cleanup used to be here -> causes the following bug
+      // BUG: There's a time window between cleanup and multimodal stream's end, which can cause input to be lost
+      // We have moved this cleanup to assembly node, but I don't really like the solution (and it might be buggy)
     }
   }
 
@@ -180,31 +191,40 @@ export class RealtimeGraphExecutor {
    * Process a single result from the audio graph
    */
   private async processAudioGraphOutput(
-    result: any,
+    result: any, // GraphOutputStreamResponse
     connection: Connection,
     sessionId: string,
-    currentGraphInteractionId: string | undefined,
+    _currentGraphInteractionId: string | undefined,
   ): Promise<void> {
     try {
-      logger.debug({
-        sessionId,
-        handlers: Object.keys(result),
-      }, 'Audio Graph Result - Processing result');
+      logger.debug(
+        {
+          sessionId,
+          handlers: Object.keys(result),
+        },
+        'Audio Graph Result - Processing result',
+      );
 
       const realtimeSession = this.sessionManager.getSession();
 
       await result.processResponse({
         Content: async (content: GraphTypes.Content) => {
-          logger.debug({
-            sessionId,
-            hasContent: !!content.content,
-            contentLength: content.content?.length,
-            hasToolCalls: !!content.toolCalls,
-            toolCallsCount: content.toolCalls?.length,
-          }, 'Audio Graph - Content received');
+          logger.debug(
+            {
+              sessionId,
+              hasContent: !!content.content,
+              contentLength: content.content?.length,
+              hasToolCalls: !!content.toolCalls,
+              toolCallsCount: content.toolCalls?.length,
+            },
+            'Audio Graph - Content received',
+          );
 
           if (content.toolCalls && content.toolCalls.length > 0) {
-            logger.info({ sessionId, toolCalls: content.toolCalls }, `Audio Graph - ${content.toolCalls.length} tool calls received`);
+            logger.info(
+              { sessionId, toolCalls: content.toolCalls },
+              `Audio Graph - ${content.toolCalls.length} tool calls received`,
+            );
           }
         },
         ContentStream: async (stream: GraphTypes.ContentStream) => {
@@ -292,8 +312,10 @@ export class RealtimeGraphExecutor {
 
             // Skip tool continuation marker - this is an internal marker, not a real transcript
             if (transcript === TOOL_CALL_CONTINUATION_MARKER) {
-              logger.info({ sessionId, interactionId },
-                'Skipping transcription event for tool call continuation marker');
+              logger.info(
+                { sessionId, interactionId },
+                'Skipping transcription event for tool call continuation marker',
+              );
               return;
             }
 
@@ -307,25 +329,30 @@ export class RealtimeGraphExecutor {
               // 2. If a conversation item with matching text already exists (text inputs create items first)
               // 3. If the most recent user message matches this transcript (text inputs are processed immediately)
               const existingItem = realtimeSession.conversationItems.find(
-                item => item.id === itemId ||
-                (item.role === 'user' &&
-                 item.content?.[0]?.type === 'input_text' &&
-                 item.content[0].text === transcript)
+                (item) =>
+                  item.id === itemId ||
+                  (item.role === 'user' &&
+                    item.content?.[0]?.type === 'input_text' &&
+                    item.content[0].text === transcript),
               );
 
               // Also check the most recent user message (text inputs are typically the last item)
-              const lastUserItem = realtimeSession.conversationItems.length > 0
-                ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1]
-                : null;
-              const isRecentTextInput = lastUserItem?.role === 'user' &&
+              const lastUserItem =
+                realtimeSession.conversationItems.length > 0
+                  ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1]
+                  : null;
+              const isRecentTextInput =
+                lastUserItem?.role === 'user' &&
                 lastUserItem?.content?.[0]?.type === 'input_text' &&
                 lastUserItem.content[0].text === transcript;
 
               if (isTextInput || existingItem || isRecentTextInput) {
                 // This is a text input that was already processed
                 // Skip all transcription events since the conversation item already exists
-                logger.info({ sessionId, itemId, transcript: transcript.substring(0, 50) },
-                  `Skipping transcription events for text input (conversation item already exists)`);
+                logger.info(
+                  { sessionId, itemId, transcript: transcript.substring(0, 50) },
+                  `Skipping transcription events for text input (conversation item already exists)`,
+                );
                 return;
               }
 
@@ -333,30 +360,22 @@ export class RealtimeGraphExecutor {
 
               // Send speech started event if we haven't already
               if (!this.currentTranscriptionItemId) {
-                this.send(
-                  RealtimeEventFactory.inputAudioBufferSpeechStarted(audioStartMs, itemId),
-                );
+                this.send(RealtimeEventFactory.inputAudioBufferSpeechStarted(audioStartMs, itemId));
               }
 
               this.currentTranscriptionItemId = itemId;
 
               // Send speech stopped event
               const audioEndMs = Date.now() - this.sessionStartTime;
-              this.send(
-                RealtimeEventFactory.inputAudioBufferSpeechStopped(audioEndMs, itemId),
-              );
+              this.send(RealtimeEventFactory.inputAudioBufferSpeechStopped(audioEndMs, itemId));
 
               const previousItemId =
                 realtimeSession.conversationItems.length > 0
-                  ? realtimeSession.conversationItems[
-                    realtimeSession.conversationItems.length - 1
-                  ].id
+                  ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1].id
                   : null;
 
               // Send committed event
-              this.send(
-                RealtimeEventFactory.inputAudioBufferCommitted(itemId, previousItemId),
-              );
+              this.send(RealtimeEventFactory.inputAudioBufferCommitted(itemId, previousItemId));
 
               // Create conversation item for user transcription
               const item: RT.ConversationItem = {
@@ -377,14 +396,11 @@ export class RealtimeGraphExecutor {
               this.send(RealtimeEventFactory.conversationItemAdded(item, previousItemId));
 
               // Send transcription completed event
-              logger.info({ sessionId, transcript, itemId }, `Transcription completed: "${transcript.substring(0, 50)}..."`);
-              this.send(
-                RealtimeEventFactory.inputAudioTranscriptionCompleted(
-                  itemId,
-                  0,
-                  transcript,
-                ),
+              logger.info(
+                { sessionId, transcript, itemId },
+                `Transcription completed: "${transcript.substring(0, 50)}..."`,
               );
+              this.send(RealtimeEventFactory.inputAudioTranscriptionCompleted(itemId, 0, transcript));
 
               this.send(RealtimeEventFactory.conversationItemDone(item, previousItemId));
 
@@ -431,7 +447,6 @@ export class RealtimeGraphExecutor {
 
     // Store the stream object so it can be aborted
     realtimeSession.currentContentStream = stream;
-
     try {
       for await (const chunk of stream) {
         if (chunk.toolCalls && chunk.toolCalls.length > 0) {
@@ -462,17 +477,9 @@ export class RealtimeGraphExecutor {
         ),
       );
 
-      this.send(
-        RealtimeEventFactory.conversationItemDone(state.item),
-      );
+      this.send(RealtimeEventFactory.conversationItemDone(state.item));
 
-      this.send(
-        RealtimeEventFactory.responseOutputItemDone(
-          response.id,
-          outputIndex,
-          state.item,
-        ),
-      );
+      this.send(RealtimeEventFactory.responseOutputItemDone(response.id, outputIndex, state.item));
 
       // Add to conversation items
       realtimeSession.conversationItems.push(state.item);
@@ -496,9 +503,7 @@ export class RealtimeGraphExecutor {
     logPrefix: string,
   ): Promise<RT.ConversationItem | undefined> {
     const realtimeSession = this.sessionManager.getSession();
-    const isTextOnly =
-      response.output_modalities?.includes('text') &&
-      !response.output_modalities?.includes('audio');
+    const isTextOnly = response.output_modalities?.includes('text') && !response.output_modalities?.includes('audio');
 
     let item: RT.ConversationItem | undefined;
     let itemId: string | undefined;
@@ -514,7 +519,7 @@ export class RealtimeGraphExecutor {
     // Process text stream chunks
     for await (const chunk of stream) {
       // Extract text from chunk (handle both string and object with text property)
-      const text = typeof chunk === 'string' ? chunk : (chunk?.text || chunk?.toString() || '');
+      const text = typeof chunk === 'string' ? chunk : chunk?.text || chunk?.toString() || '';
 
       if (!text || text === '') {
         continue;
@@ -536,37 +541,28 @@ export class RealtimeGraphExecutor {
 
         const previousItemId =
           realtimeSession.conversationItems.length > 0
-            ? realtimeSession.conversationItems[
-              realtimeSession.conversationItems.length - 1
-            ].id
+            ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1].id
             : null;
 
         response.output.push(item);
-        this.send(
-          RealtimeEventFactory.responseOutputItemAdded(response.id, outputIndex, item),
-        );
-        this.send(
-          RealtimeEventFactory.conversationItemAdded(item, previousItemId),
-        );
+        this.send(RealtimeEventFactory.responseOutputItemAdded(response.id, outputIndex, item));
+        this.send(RealtimeEventFactory.conversationItemAdded(item, previousItemId));
 
         contentPart = { type: 'text', text: '' };
 
         item.content = [contentPart];
         this.send(
-          RealtimeEventFactory.responseContentPartAdded(
-            response.id,
-            itemId,
-            outputIndex,
-            contentIndex,
-            contentPart,
-          ),
+          RealtimeEventFactory.responseContentPartAdded(response.id, itemId, outputIndex, contentIndex, contentPart),
         );
 
         // Track that we're streaming text for this interaction
         const textInteractionId = connection.state.interactionId;
         this.isCancelled = false;
 
-        logger.info({ sessionId: this.sessionKey, textInteractionId, logPrefix }, `Text stream starting (${logPrefix})`);
+        logger.info(
+          { sessionId: this.sessionKey, textInteractionId, logPrefix },
+          `Text stream starting (${logPrefix})`,
+        );
       }
 
       if (this.isCancelled) {
@@ -575,15 +571,7 @@ export class RealtimeGraphExecutor {
       }
 
       // Send text delta event
-      this.send(
-        RealtimeEventFactory.responseTextDelta(
-          response.id,
-          itemId!,
-          outputIndex!,
-          contentIndex,
-          text,
-        ),
-      );
+      this.send(RealtimeEventFactory.responseTextDelta(response.id, itemId!, outputIndex!, contentIndex, text));
       // logger.info(`[TEXT DELTA] - ${text}`);
       contentPart!.text = (contentPart!.text || '') + text;
     }
@@ -595,20 +583,24 @@ export class RealtimeGraphExecutor {
       } else {
         const previousItemId =
           realtimeSession.conversationItems.length > 0
-            ? realtimeSession.conversationItems[
-              realtimeSession.conversationItems.length - 1
-            ].id
+            ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1].id
             : null;
 
         // Send text completion event
-        this.send(RealtimeEventFactory.responseTextDone(
-          response.id, itemId!, outputIndex!, contentIndex, contentPart!.text || ''
-        ));
+        this.send(
+          RealtimeEventFactory.responseTextDone(
+            response.id,
+            itemId!,
+            outputIndex!,
+            contentIndex,
+            contentPart!.text || '',
+          ),
+        );
 
         // Send common completion events
-        this.send(RealtimeEventFactory.responseContentPartDone(
-          response.id, itemId!, outputIndex!, contentIndex, contentPart!
-        ));
+        this.send(
+          RealtimeEventFactory.responseContentPartDone(response.id, itemId!, outputIndex!, contentIndex, contentPart!),
+        );
         this.send(RealtimeEventFactory.conversationItemDone(item, previousItemId));
 
         item.status = 'completed';
@@ -633,9 +625,7 @@ export class RealtimeGraphExecutor {
     logPrefix: string,
   ): Promise<RT.ConversationItem | undefined> {
     const realtimeSession = this.sessionManager.getSession();
-    const isTextOnly =
-      response.output_modalities?.includes('text') &&
-      !response.output_modalities?.includes('audio');
+    const isTextOnly = response.output_modalities?.includes('text') && !response.output_modalities?.includes('audio');
 
     // Warn if called with text-only modality (should use handleTextOutputStream instead)
     if (isTextOnly) {
@@ -670,31 +660,19 @@ export class RealtimeGraphExecutor {
 
           const previousItemId =
             realtimeSession.conversationItems.length > 0
-              ? realtimeSession.conversationItems[
-                realtimeSession.conversationItems.length - 1
-              ].id
+              ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1].id
               : null;
 
           response.output.push(item);
-          this.send(
-            RealtimeEventFactory.responseOutputItemAdded(response.id, outputIndex, item),
-          );
-          this.send(
-            RealtimeEventFactory.conversationItemAdded(item, previousItemId),
-          );
+          this.send(RealtimeEventFactory.responseOutputItemAdded(response.id, outputIndex, item));
+          this.send(RealtimeEventFactory.conversationItemAdded(item, previousItemId));
 
           // Always create audio content part (text-only is handled elsewhere)
           contentPart = { type: 'audio', transcript: '' };
 
           item.content = [contentPart];
           this.send(
-            RealtimeEventFactory.responseContentPartAdded(
-              response.id,
-              itemId,
-              outputIndex,
-              contentIndex,
-              contentPart,
-            ),
+            RealtimeEventFactory.responseContentPartAdded(response.id, itemId, outputIndex, contentIndex, contentPart),
           );
 
           // Track that we're streaming TTS for this interaction
@@ -727,7 +705,7 @@ export class RealtimeGraphExecutor {
         const audioBase64 = convertToPCM16Base64(
           chunk.audio?.data,
           chunk.audio?.sampleRate,
-          `TTS Audio (${logPrefix})`
+          `TTS Audio (${logPrefix})`,
         );
 
         if (!audioBase64) {
@@ -736,13 +714,7 @@ export class RealtimeGraphExecutor {
 
         // Send audio delta
         this.send(
-          RealtimeEventFactory.responseAudioDelta(
-            response.id,
-            itemId!,
-            outputIndex!,
-            contentIndex,
-            audioBase64,
-          ),
+          RealtimeEventFactory.responseAudioDelta(response.id, itemId!, outputIndex!, contentIndex, audioBase64),
         );
 
         // Update transcript
@@ -758,23 +730,31 @@ export class RealtimeGraphExecutor {
         } else {
           const previousItemId =
             realtimeSession.conversationItems.length > 0
-              ? realtimeSession.conversationItems[
-                realtimeSession.conversationItems.length - 1
-              ].id
+              ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1].id
               : null;
 
           // Send audio completion events
-          this.send(RealtimeEventFactory.responseAudioTranscriptDone(
-            response.id, itemId!, outputIndex!, contentIndex, contentPart!.transcript || ''
-          ));
-          this.send(RealtimeEventFactory.responseAudioDone(
-            response.id, itemId!, outputIndex!, contentIndex
-          ));
+          this.send(
+            RealtimeEventFactory.responseAudioTranscriptDone(
+              response.id,
+              itemId!,
+              outputIndex!,
+              contentIndex,
+              contentPart!.transcript || '',
+            ),
+          );
+          this.send(RealtimeEventFactory.responseAudioDone(response.id, itemId!, outputIndex!, contentIndex));
 
           // Send common completion events
-          this.send(RealtimeEventFactory.responseContentPartDone(
-            response.id, itemId!, outputIndex!, contentIndex, contentPart!
-          ));
+          this.send(
+            RealtimeEventFactory.responseContentPartDone(
+              response.id,
+              itemId!,
+              outputIndex!,
+              contentIndex,
+              contentPart!,
+            ),
+          );
           this.send(RealtimeEventFactory.conversationItemDone(item, previousItemId));
 
           item.status = 'completed';
@@ -792,9 +772,7 @@ export class RealtimeGraphExecutor {
     } catch (error) {
       // Check if this is a cancellation error (expected when response is cancelled)
       const isCancellationError =
-        this.isCancelled &&
-        error instanceof Error &&
-        error.message.includes('Operation cancelled');
+        this.isCancelled && error instanceof Error && error.message.includes('Operation cancelled');
 
       if (isCancellationError) {
         logger.debug({ sessionId: this.sessionKey }, 'TTS stream cancelled (expected during response cancellation)');
@@ -819,7 +797,7 @@ export class RealtimeGraphExecutor {
    * Handle tool call chunks from LLM stream
    */
   private async handleToolCallChunk(
-    toolCalls: ToolCallInterface[],
+    toolCalls: ToolCall[],
     response: RT.Response,
     toolCallState: Map<string, { item: RT.ConversationItem; args: string }>,
   ): Promise<void> {
@@ -840,14 +818,10 @@ export class RealtimeGraphExecutor {
           arguments: '',
         };
 
+        logger.debug({ toolName: toolCall.name }, `A tool call is issued. `);
+
         response.output.push(item);
-        this.send(
-          RealtimeEventFactory.responseOutputItemAdded(
-            response.id,
-            outputIndex,
-            item,
-          ),
-        );
+        this.send(RealtimeEventFactory.responseOutputItemAdded(response.id, outputIndex, item));
         this.send(RealtimeEventFactory.conversationItemAdded(item));
 
         toolCallState.set(callId, { item, args: toolCall.args || '' });
@@ -889,10 +863,7 @@ export class RealtimeGraphExecutor {
   /**
    * Handle partial transcription updates from AssemblyAI.
    */
-  handlePartialTranscriptDelta(
-    interactionId: string,
-    text: string,
-  ): void {
+  handlePartialTranscriptDelta(interactionId: string, text: string): void {
     if (!interactionId || typeof text !== 'string') {
       return;
     }
@@ -923,13 +894,7 @@ export class RealtimeGraphExecutor {
 
     this.partialTranscripts.set(interactionId, text);
 
-    this.send(
-      RealtimeEventFactory.inputAudioTranscriptionDelta(
-        interactionId,
-        0,
-        delta,
-      ),
-    );
+    this.send(RealtimeEventFactory.inputAudioTranscriptionDelta(interactionId, 0, delta));
   }
 
   private getCommonPrefixLength(a: string, b: string): number {
@@ -970,19 +935,23 @@ export class RealtimeGraphExecutor {
     this.send(RealtimeEventFactory.responseCreated(response));
 
     try {
-      const connection = this.inworldApp.connections[this.sessionKey];
+      const connection = this.realtimeApp.connections[this.sessionKey];
 
       // Check if this is a tool call continuation (response.create after function_call_output)
-      const lastItem = realtimeSession.conversationItems.length > 0
-        ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1]
-        : null;
+      const lastItem =
+        realtimeSession.conversationItems.length > 0
+          ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1]
+          : null;
 
       const isToolCallContinuation = lastItem?.type === 'function_call_output';
 
       if (isToolCallContinuation) {
         // This is a continuation after a tool call - the tool result is already in connection.state.messages
         // We need to trigger the LLM with the current conversation state
-        logger.info({ sessionId: this.sessionKey, callId: lastItem.call_id }, 'Tool call continuation - triggering LLM with tool result');
+        logger.info(
+          { sessionId: this.sessionKey, callId: lastItem.call_id },
+          'Tool call continuation - triggering LLM with tool result',
+        );
 
         if (!connection) {
           throw new Error('No connection found for session');
@@ -998,9 +967,7 @@ export class RealtimeGraphExecutor {
       let userMessage: RT.ConversationItem | undefined;
 
       if (inputItemId) {
-        userMessage = realtimeSession.conversationItems.find(
-          (i) => i.id === inputItemId,
-        );
+        userMessage = realtimeSession.conversationItems.find((i) => i.id === inputItemId);
       } else {
         // Find the last user message
         for (let i = realtimeSession.conversationItems.length - 1; i >= 0; i--) {
@@ -1027,7 +994,8 @@ export class RealtimeGraphExecutor {
           RealtimeEventFactory.error({
             type: 'invalid_request_error',
             code: 'no_user_message',
-            message: 'No user message found to generate response. Please create a conversation item before requesting a response.',
+            message:
+              'No user message found to generate response. Please create a conversation item before requesting a response.',
           }),
         );
         realtimeSession.currentResponse = null;
@@ -1035,7 +1003,6 @@ export class RealtimeGraphExecutor {
       }
 
       const content = userMessage.content[0];
-      let input: any;
 
       if (content.type === 'input_text' && content.text) {
         // Text inputs are processed through the continuous multimodal stream
@@ -1046,7 +1013,10 @@ export class RealtimeGraphExecutor {
         if (!hasActiveAudioGraph) {
           // No active graph - text should have been pushed via conversation.item.create first.
           // This is an error condition, as the input will be lost.
-          logger.error({ sessionId: this.sessionKey }, 'No active graph for text input - ensure conversation.item.create was called first');
+          logger.error(
+            { sessionId: this.sessionKey },
+            'No active graph for text input - ensure conversation.item.create was called first',
+          );
           response.status = 'failed';
           response.status_details = {
             type: 'failed',
@@ -1060,7 +1030,8 @@ export class RealtimeGraphExecutor {
             RealtimeEventFactory.error({
               type: 'invalid_request_error',
               code: 'text_not_pushed',
-              message: 'Text input must be pushed to the audio graph via conversation.item.create before requesting a response.',
+              message:
+                'Text input must be pushed to the audio graph via conversation.item.create before requesting a response.',
             }),
           );
           realtimeSession.currentResponse = null;
@@ -1069,8 +1040,10 @@ export class RealtimeGraphExecutor {
 
         // Graph is running, so this response.create event is redundant.
         // Cancel it and notify the client. The graph will generate its own response.
-        logger.info({ sessionId: this.sessionKey, responseId },
-          'Text input being processed by continuous graph - cancelling redundant response.create');
+        logger.info(
+          { sessionId: this.sessionKey, responseId },
+          'Text input being processed by continuous graph - cancelling redundant response.create',
+        );
 
         response.status = 'cancelled';
         response.status_details = { type: 'cancelled', reason: 'handled_by_continuous_graph' };
@@ -1086,13 +1059,6 @@ export class RealtimeGraphExecutor {
         // unless we have the transcript.
         // But the logic in original file threw error.
         throw new Error(`Unsupported content type: ${content.type}`);
-      }
-
-      // Don't mark as completed if already cancelled
-      if (!this.isCancelled) {
-        // Mark response as completed
-        response.status = 'completed';
-        response.status_details = { type: 'completed' };
       }
     } catch (error) {
       logger.error({ err: error, sessionId: this.sessionKey }, 'Error creating response');
@@ -1125,14 +1091,14 @@ export class RealtimeGraphExecutor {
    * The tool result is already in connection.state.messages (added by createConversationItem).
    * This method triggers the graph without adding a new user message.
    */
-  private async handleToolCallContinuation(
-    connection: Connection,
-    response: RT.Response,
-  ): Promise<void> {
+  private async handleToolCallContinuation(connection: Connection, response: RT.Response): Promise<void> {
     const realtimeSession = this.sessionManager.getSession();
 
     try {
       // Create a multimodal stream manager for this continuation
+      if (connection.multimodalStreamManager) {
+        connection.multimodalStreamManager.end();
+      }
       const multimodalStreamManager = new MultimodalStreamManager();
       connection.multimodalStreamManager = multimodalStreamManager;
 
@@ -1145,8 +1111,8 @@ export class RealtimeGraphExecutor {
         voiceId: connection.state.voiceId || session.audio.output.voice,
       };
 
-      // Use the Assembly.AI audio graph
-      const graphWrapper = this.inworldApp.graphWithAudioInput;
+      // Get the Inworld graph for audio processing
+      const graphWrapper = this.realtimeApp.getGraph() as IInworldGraph;
 
       // Push a special tool continuation marker that the graph nodes will recognize
       // This signals that we're continuing after a tool call and shouldn't add a new user message
@@ -1197,4 +1163,3 @@ export class RealtimeGraphExecutor {
     }
   }
 }
-
