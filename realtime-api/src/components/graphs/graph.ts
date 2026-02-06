@@ -4,6 +4,8 @@ import {
   ProxyNode,
   RemoteTTSNode,
   FakeTTSComponent,
+  RemoteLLMChatNode,
+  FakeRemoteLLMComponent,
   TextAggregatorNode,
   TextChunkingNode,
   RemoteLLMChatRoutingNode,
@@ -54,6 +56,9 @@ export class InworldGraphWrapper {
     const llmChatRoutingRequestNode = new LLMChatRoutingRequestNode({
       id: `llm-chat-routing-request-node${postfix}`,
     })
+    const dialogPromptBuilderNode = new DialogPromptBuilderNode({
+      id: `dialog-prompt-builder-node${postfix}`,
+    });
 
 
     const textInputNode = new TextInputNode({
@@ -72,6 +77,16 @@ export class InworldGraphWrapper {
         }
       }
     })
+    const llmNode = new RemoteLLMChatNode({
+      id: `llm-node${postfix}`,
+      provider: "inworld",
+      modelName: "frugal-osquio",
+      stream: true,
+      textGenerationConfig: {
+        maxNewTokens: 320
+      },
+      reportToClient: true,
+    });
 
     const textChunkingNode = new TextChunkingNode({
       id: `text-chunking-node${postfix}`,
@@ -139,10 +154,21 @@ export class InworldGraphWrapper {
         }
       }
     })
+    const llmNodeTextOnly = new RemoteLLMChatNode({
+      id: `llm-node-text-only${postfix}`,
+      provider: "inworld",
+      modelName: "frugal-osquio",
+      stream: true,
+      textGenerationConfig: { maxNewTokens: 320 },
+      reportToClient: true,
+    });
 
     const llmChatRoutingRequestNodeTextOnly = new LLMChatRoutingRequestNode({
       id: `llm-chat-routing-request-node-text-only${postfix}`,
     })
+    const dialogPromptBuilderNodeTextOnly = new DialogPromptBuilderNode({
+      id: `dialog-prompt-builder-node-text-only${postfix}`,
+    });
 
     const textAggregatorNodeTextOnly = new TextAggregatorNode({
       id: `text-aggregator-node-text-only${postfix}`,
@@ -163,20 +189,25 @@ export class InworldGraphWrapper {
 
     graphBuilder
       .addNode(textInputNode)
-      .addNode(llmChatRoutingRequestNode)
-      .addNode(llmRouterNode)
+      // .addNode(llmChatRoutingRequestNode)
+      // .addNode(llmRouterNode)
+      .addNode(dialogPromptBuilderNode)
+      .addNode(llmNode)
       .addNode(textChunkingNode)
       .addNode(textAggregatorNode)
       .addNode(ttsRequestBuilderNode)
       .addNode(ttsNode)
       .addNode(stateUpdateNode)
-      .addEdge(textInputNode, llmChatRoutingRequestNode, {
+      .addEdge(textInputNode, dialogPromptBuilderNode, {
+      //.addEdge(textInputNode, llmChatRoutingRequestNode, {
         condition: async (input: State) => {
           return input?.output_modalities.includes("audio")
         },
       })
-      .addEdge(llmChatRoutingRequestNode, llmRouterNode)
-      .addEdge(llmRouterNode, textChunkingNode)
+      // .addEdge(llmChatRoutingRequestNode, llmRouterNode)
+      // .addEdge(llmRouterNode, textChunkingNode)
+      .addEdge(dialogPromptBuilderNode, llmNode)
+      .addEdge(llmNode, textChunkingNode)
       .addEdge(textInputNode, ttsRequestBuilderNode, {
         condition: async (input: State) => {
           return input?.output_modalities.includes("audio")
@@ -184,24 +215,28 @@ export class InworldGraphWrapper {
       })
       .addEdge(textChunkingNode, ttsRequestBuilderNode)
       .addEdge(ttsRequestBuilderNode, ttsNode)
-      .addEdge(llmRouterNode, textAggregatorNode)
+      //.addEdge(llmRouterNode, textAggregatorNode)
+      .addEdge(llmNode, textAggregatorNode)
       .addEdge(textAggregatorNode, stateUpdateNode)
       // Text-only outputs nodes/edges
-      .addNode(llmChatRoutingRequestNodeTextOnly)
+      //.addNode(llmChatRoutingRequestNodeTextOnly)
+      .addNode(dialogPromptBuilderNodeTextOnly)
       .addNode(textChunkingNodeTextOnly)
-      .addNode(llmRouterNodeTextOnly)
+      //.addNode(llmRouterNodeTextOnly)
+      .addNode(llmNodeTextOnly)
       .addNode(textAggregatorNodeTextOnly)
       .addNode(stateUpdateNodeTextOnly)
-      .addEdge(textInputNode, llmChatRoutingRequestNodeTextOnly, {
+      //.addEdge(textInputNode, llmChatRoutingRequestNodeTextOnly, {
+      .addEdge(textInputNode, dialogPromptBuilderNodeTextOnly, {
         condition: async (input: State) => {
           return !input?.output_modalities.includes("audio") && input?.output_modalities.includes("text")
         },
       })
-      .addEdge(llmChatRoutingRequestNodeTextOnly, llmRouterNodeTextOnly)
-      .addEdge(llmRouterNodeTextOnly, textChunkingNodeTextOnly)
-      .addEdge(llmRouterNodeTextOnly, textAggregatorNodeTextOnly)
-      .addEdge(textAggregatorNodeTextOnly, stateUpdateNodeTextOnly);
-
+      .addEdge(dialogPromptBuilderNodeTextOnly, llmNodeTextOnly)
+      .addEdge(llmNodeTextOnly, textChunkingNodeTextOnly)
+      .addEdge(llmNodeTextOnly, textAggregatorNodeTextOnly)
+      .addEdge(textAggregatorNodeTextOnly, stateUpdateNodeTextOnly)
+      ;
 
     // Validate configuration
     if (!props.assemblyAIApiKey) {
