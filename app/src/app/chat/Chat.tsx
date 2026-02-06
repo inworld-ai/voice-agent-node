@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { config } from '../../config';
 import { ChatHistoryItem, InteractionLatency } from '../types';
 import { RecordIcon } from './Chat.styled';
-import { History } from './History';
+import { FeedbackRating, History } from './History';
 import { LatencyChart } from './LatencyChart';
 import { Player } from '../sound/Player';
 
@@ -29,6 +29,7 @@ interface ChatProps {
   isLoaded: boolean;
   player: Player;
   currentResponseIdRef?: React.RefObject<string | null>;
+  onFeedback?: (itemId: string, rating: FeedbackRating) => void;
 }
 
 let interval: number;
@@ -60,7 +61,7 @@ function convertAudioToPCM16Base64(float32Audio: Float32Array): string {
 }
 
 export function Chat(props: ChatProps) {
-  const { chatHistory, connection, latencyData, onStopRecordingRef, isLoaded, player, currentResponseIdRef } = props;
+  const { chatHistory, connection, latencyData, onStopRecordingRef, isLoaded, player, currentResponseIdRef, onFeedback } = props;
 
   const [text, setText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
@@ -411,7 +412,7 @@ export function Chat(props: ChatProps) {
             transition: 'padding-bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
           }}
         >
-          <History history={chatHistory} latencyData={latencyData} />
+          <History history={chatHistory} latencyData={latencyData} onFeedback={onFeedback} />
         </Box>
 
         {/* Input Widget - Different layouts for center vs bottom */}

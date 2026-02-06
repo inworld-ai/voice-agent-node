@@ -1,5 +1,11 @@
-import { Box, Fade, Stack, Typography } from '@mui/material';
-import React, { useEffect, useRef, useState } from 'react';
+import {
+  ThumbDown,
+  ThumbDownOutlined,
+  ThumbUp,
+  ThumbUpOutlined,
+} from '@mui/icons-material';
+import { Box, Fade, IconButton, Stack, Typography } from '@mui/material';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { config } from '../../config';
 import {
@@ -11,9 +17,12 @@ import {
 } from '../types';
 import { Typing } from './Typing';
 
+export type FeedbackRating = 'thumbs_up' | 'thumbs_down' | null;
+
 interface HistoryProps {
   history: ChatHistoryItem[];
   latencyData: InteractionLatency[];
+  onFeedback?: (itemId: string, rating: FeedbackRating) => void;
 }
 
 type CombinedHistoryItem = {
@@ -24,7 +33,7 @@ type CombinedHistoryItem = {
 };
 
 export const History = (props: HistoryProps) => {
-  const { history, latencyData } = props;
+  const { history, latencyData, onFeedback } = props;
 
   const ref = useRef<HTMLDivElement>(null);
   const prevHistoryLengthRef = useRef(0);
@@ -33,6 +42,45 @@ export const History = (props: HistoryProps) => {
     CombinedHistoryItem[]
   >([]);
   const [isInteractionEnd, setIsInteractionEnd] = useState<boolean>(true);
+  const [feedbackState, setFeedbackState] = useState<Map<string, FeedbackRating>>(new Map());
+  const [disabledItems, setDisabledItems] = useState<Set<string>>(new Set());
+
+  const handleFeedback = useCallback(
+    (itemId: string, currentRating: FeedbackRating) => {
+      // Client-side debounce: disable buttons for 500ms after click
+      if (disabledItems.has(itemId)) return;
+
+      setDisabledItems((prev) => {
+        const next = new Set(prev);
+        next.add(itemId);
+        return next;
+      });
+      setTimeout(() => {
+        setDisabledItems((prev) => {
+          const next = new Set(prev);
+          next.delete(itemId);
+          return next;
+        });
+      }, 500);
+
+      const existingRating = feedbackState.get(itemId);
+      // Toggle off if clicking the same rating, otherwise set new rating
+      const newRating = existingRating === currentRating ? null : currentRating;
+
+      setFeedbackState((prev) => {
+        const next = new Map(prev);
+        if (newRating === null) {
+          next.delete(itemId);
+        } else {
+          next.set(itemId, newRating);
+        }
+        return next;
+      });
+
+      onFeedback?.(itemId, newRating);
+    },
+    [feedbackState, disabledItems, onFeedback],
+  );
 
   // Scroll to bottom when combinedChatHistory changes (after messages are processed)
   useEffect(() => {
@@ -391,6 +439,83 @@ export const History = (props: HistoryProps) => {
                   </Typography>
                 )}
               </Box>
+
+              {/* Feedback buttons for completed agent messages */}
+              {isAgent &&
+                !item.message.isRecognizing &&
+                item.message.text &&
+                item.message.text.trim().length > 0 && (
+                  <Box
+                    sx={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 0.25,
+                      mt: 0.5,
+                      ml: 0.5,
+                    }}
+                  >
+                    <IconButton
+                      size="small"
+                      disabled={disabledItems.has(item.id)}
+                      onClick={() => handleFeedback(item.id, 'thumbs_up')}
+                      sx={{
+                        color:
+                          feedbackState.get(item.id) === 'thumbs_up'
+                            ? '#10B981'
+                            : '#C4BDB7',
+                        padding: '4px',
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': {
+                          color: '#10B981',
+                          backgroundColor: 'rgba(16, 185, 129, 0.08)',
+                        },
+                        '&.Mui-disabled': {
+                          color:
+                            feedbackState.get(item.id) === 'thumbs_up'
+                              ? '#10B981'
+                              : '#C4BDB7',
+                          opacity: 0.6,
+                        },
+                      }}
+                    >
+                      {feedbackState.get(item.id) === 'thumbs_up' ? (
+                        <ThumbUp sx={{ fontSize: '16px' }} />
+                      ) : (
+                        <ThumbUpOutlined sx={{ fontSize: '16px' }} />
+                      )}
+                    </IconButton>
+                    <IconButton
+                      size="small"
+                      disabled={disabledItems.has(item.id)}
+                      onClick={() => handleFeedback(item.id, 'thumbs_down')}
+                      sx={{
+                        color:
+                          feedbackState.get(item.id) === 'thumbs_down'
+                            ? '#EF4444'
+                            : '#C4BDB7',
+                        padding: '4px',
+                        transition: 'all 0.2s ease-in-out',
+                        '&:hover': {
+                          color: '#EF4444',
+                          backgroundColor: 'rgba(239, 68, 68, 0.08)',
+                        },
+                        '&.Mui-disabled': {
+                          color:
+                            feedbackState.get(item.id) === 'thumbs_down'
+                              ? '#EF4444'
+                              : '#C4BDB7',
+                          opacity: 0.6,
+                        },
+                      }}
+                    >
+                      {feedbackState.get(item.id) === 'thumbs_down' ? (
+                        <ThumbDown sx={{ fontSize: '16px' }} />
+                      ) : (
+                        <ThumbDownOutlined sx={{ fontSize: '16px' }} />
+                      )}
+                    </IconButton>
+                  </Box>
+                )}
             </Box>
           );
         })}

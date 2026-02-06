@@ -855,6 +855,15 @@ export default function HomePage() {
     cleanupChatState(true);
   }, [cleanupChatState]);
 
+  // Feedback handler placeholder - will send to server via WebSocket in the future
+  const handleFeedback = useCallback(
+    (itemId: string, rating: 'thumbs_up' | 'thumbs_down' | null) => {
+      console.log(`[Feedback] item=${itemId} rating=${rating}`);
+      // TODO: Send conversation.item.feedback event via WebSocket once server supports it
+    },
+    [],
+  );
+
   const resetForm = useCallback(() => {
     formMethods.reset({
       ...defaults.configuration,
@@ -892,6 +901,7 @@ export default function HomePage() {
       isLoaded={open && !!agent}
       player={player}
       currentResponseIdRef={currentInteractionId}
+      onFeedback={handleFeedback}
     />
   ) : (
     <ConfigView
