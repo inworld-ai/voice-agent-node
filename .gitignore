@@ -24,6 +24,7 @@ node_modules
 
 # Environment variables
 .env
+.env.local
 
 # IDE files
 .idea/
@@ -54,3 +55,6 @@ server/cloudbuild.yaml
 client/Dockerfile
 client/cloudbuild.yaml
 client/nginx.conf
+
+# Next.js
+.next/
