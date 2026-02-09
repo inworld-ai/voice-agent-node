@@ -69,7 +69,7 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
       textGenerationConfig: {
         maxNewTokens: 320,
       },
-      stream: true,
+      stream: false,
     })
 
     const textChunkingNode = new TextChunkingNode({

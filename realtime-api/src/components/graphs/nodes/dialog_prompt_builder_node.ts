@@ -61,7 +61,6 @@ export class DialogPromptBuilderNode extends CustomNode {
                 name: tool.name,
                 description: tool.description,
                 properties: JSON.stringify(tool.parameters || {}),
-                modelId: "inworld/routers/frugal-osquio"
               };
             }
             // If already in Inworld format or unknown, pass through
@@ -91,6 +90,7 @@ export class DialogPromptBuilderNode extends CustomNode {
         { messageCount: conversationMessages.length },
         `DialogPromptBuilderNode final request: ${conversationMessages.length} messages`,
       );
+      request.modelId = "inworld/routers/frugal-osquio"
       return new GraphTypes.LLMChatRequest(request);
     } catch (error) {
       logger.error({ err: error }, 'DialogPromptBuilderNode fatal error');
