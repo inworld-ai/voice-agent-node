@@ -50,6 +50,20 @@ class AssemblyAISession {
   private lastActivityTime: number = Date.now();
   private readonly INACTIVITY_TIMEOUT_MS = 60000; // 60 seconds
 
+  // Audio buffering to meet AssemblyAI's minimum chunk duration requirement (50-1000ms)
+  // Pre-allocated circular buffer to avoid frequent memory allocations
+  private readonly BUFFER_CAPACITY = 48000; // 3 seconds at 16kHz - enough for typical buffering needs
+  private audioBuffer: Int16Array = new Int16Array(this.BUFFER_CAPACITY);
+  private bufferWritePos: number = 0; // Current write position (also represents data length)
+  private readonly MIN_CHUNK_SAMPLES = 800; // 50ms at 16kHz (AssemblyAI minimum)
+  private readonly MAX_CHUNK_SAMPLES = 16000; // 1000ms at 16kHz (AssemblyAI maximum)
+  private skippedChunkCount: number = 0;
+  // If we skip more than this many chunks, consider the connection persistently down
+  // At ~50-100 chunks/second, 500 chunks = ~5-10 seconds of failed sends
+  private readonly MAX_SKIPPED_CHUNKS_BEFORE_ABORT = 500;
+  // Reusable Buffer for WebSocket sends to avoid per-chunk allocations
+  private sendBuffer: Buffer | null = null;
+
   constructor(
     readonly sessionId: string,
     private apiKey: string,
@@ -172,15 +186,156 @@ class AssemblyAISession {
   }
 
   /**
-   * Send audio data
+   * Send audio data with buffering to meet AssemblyAI's minimum chunk duration requirement.
+   * AssemblyAI requires chunks between 50ms (800 samples) and 1000ms (16000 samples) at 16kHz.
+   *
+   * Uses a pre-allocated circular buffer to minimize memory allocations and GC pressure.
+   */
+  /**
+   * Send audio data with buffering to meet AssemblyAI's chunk duration requirements.
    */
   sendAudio(pcm16Data: Int16Array): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(Buffer.from(pcm16Data.buffer));
-      this.resetInactivityTimer();
-    } else {
-      logger.warn({ sessionId: this.sessionId }, 'AssemblyAI WebSocket not open, skipping audio chunk');
+    if (!this.isWebSocketReady()) {
+      this.trackSkippedChunk();
+      return;
     }
+    this.skippedChunkCount = 0;
+
+    this.appendToBuffer(pcm16Data);
+    this.sendReadyChunks();
+    this.resetInactivityTimer();
+  }
+
+  /**
+   * Check if WebSocket is ready to send data.
+   */
+  private isWebSocketReady(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Track skipped chunks with rate-limited logging.
+   */
+  private trackSkippedChunk(): void {
+    this.skippedChunkCount++;
+    if (this.skippedChunkCount === 1 || this.skippedChunkCount % 100 === 0) {
+      logger.warn(
+        { sessionId: this.sessionId, skippedChunks: this.skippedChunkCount },
+        'AssemblyAI WebSocket not open, skipping audio chunks',
+      );
+    }
+  }
+
+  /**
+   * Append audio data to the pre-allocated buffer.
+   * Buffer overflow is impossible: post-compaction writePos < 800, buffer holds 48000,
+   * so we'd need a 47000+ sample chunk (~3 seconds) to overflow.
+   */
+  private appendToBuffer(pcm16Data: Int16Array): void {
+    this.audioBuffer.set(pcm16Data, this.bufferWritePos);
+    this.bufferWritePos += pcm16Data.length;
+  }
+
+  /**
+   * Send all complete chunks from buffer and compact remaining data.
+   */
+  private sendReadyChunks(): void {
+    let readPos = 0;
+
+    // Send chunks while we have enough samples (minimum 50ms at 16kHz)
+    while (this.bufferWritePos - readPos >= this.MIN_CHUNK_SAMPLES) {
+      const chunkSize = Math.min(this.bufferWritePos - readPos, this.MAX_CHUNK_SAMPLES);
+      this.sendChunk(readPos, chunkSize);
+      readPos += chunkSize;
+    }
+
+    // Compact: move remaining data to buffer start
+    if (readPos > 0) {
+      const remainingLength = this.bufferWritePos - readPos;
+      if (remainingLength > 0) {
+        this.audioBuffer.copyWithin(0, readPos, this.bufferWritePos);
+      }
+      this.bufferWritePos = remainingLength;
+    }
+  }
+
+  /**
+   * Send a single chunk from the buffer via WebSocket.
+   */
+  private sendChunk(offset: number, sampleCount: number): void {
+    const byteLength = sampleCount * 2; // Int16 = 2 bytes per sample
+
+    // Ensure send buffer is large enough (allocated once, reused)
+    if (!this.sendBuffer || this.sendBuffer.length < byteLength) {
+      this.sendBuffer = Buffer.allocUnsafe(Math.max(byteLength, this.MAX_CHUNK_SAMPLES * 2));
+    }
+
+    // Copy to send buffer (required because WebSocket.send is async and we reuse audioBuffer)
+    const chunkView = this.audioBuffer.subarray(offset, offset + sampleCount);
+    Buffer.from(chunkView.buffer, chunkView.byteOffset, byteLength).copy(this.sendBuffer, 0, 0, byteLength);
+
+    this.ws!.send(this.sendBuffer.subarray(0, byteLength));
+  }
+
+  /**
+   * Flush any remaining buffered audio (e.g., at end of stream).
+   * Pads with silence if needed to meet minimum chunk requirement.
+   */
+  flushAudioBuffer(): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      logger.debug(
+        { sessionId: this.sessionId, wsState: this.ws?.readyState },
+        'AssemblyAI flushAudioBuffer skipped: WebSocket not open',
+      );
+      return;
+    }
+
+    if (this.bufferWritePos > 0) {
+      let sendLength = this.bufferWritePos;
+
+      // Pad with silence to meet minimum requirement if needed
+      if (this.bufferWritePos < this.MIN_CHUNK_SAMPLES) {
+        // Zero out the padding area (silence)
+        this.audioBuffer.fill(0, this.bufferWritePos, this.MIN_CHUNK_SAMPLES);
+        sendLength = this.MIN_CHUNK_SAMPLES;
+      }
+
+      // Send the buffered data
+      const byteLength = sendLength * 2;
+      if (!this.sendBuffer || this.sendBuffer.length < byteLength) {
+        this.sendBuffer = Buffer.allocUnsafe(byteLength);
+      }
+
+      // Copy data using Buffer.from() to create view, then copy to sendBuffer
+      Buffer.from(this.audioBuffer.buffer, this.audioBuffer.byteOffset, byteLength).copy(this.sendBuffer, 0, 0, byteLength);
+
+      this.ws.send(this.sendBuffer.subarray(0, byteLength));
+      this.bufferWritePos = 0;
+      this.resetInactivityTimer();
+    }
+  }
+
+  /**
+   * Clear the audio buffer (e.g., when closing session)
+   */
+  clearAudioBuffer(): void {
+    this.bufferWritePos = 0;
+    // Note: We don't need to zero-fill the buffer as bufferWritePos tracks valid data
+  }
+
+  /**
+   * Check if the WebSocket connection is persistently down.
+   * Returns true if too many consecutive chunks have been skipped.
+   */
+  isConnectionPersistentlyDown(): boolean {
+    return this.skippedChunkCount >= this.MAX_SKIPPED_CHUNKS_BEFORE_ABORT;
+  }
+
+  /**
+   * Get the number of skipped chunks (for logging/diagnostics)
+   */
+  getSkippedChunkCount(): number {
+    return this.skippedChunkCount;
   }
 
   /**
@@ -271,6 +426,9 @@ class AssemblyAISession {
     if (this.inactivityTimeout) {
       clearTimeout(this.inactivityTimeout);
     }
+
+    // Clear any buffered audio
+    this.clearAudioBuffer();
 
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
@@ -615,6 +773,9 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
               );
               isStreamExhausted = true;
 
+              // Flush any remaining buffered audio before ending
+              session?.flushAudioBuffer();
+
               connection.multimodalStreamManager.end();
               break;
             }
@@ -664,6 +825,23 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
             const pcm16Data = float32ToPCM16(float32Data);
 
             session?.sendAudio(pcm16Data);
+
+            // Check if WebSocket connection is persistently down - abort to prevent memory waste
+            if (session?.isConnectionPersistentlyDown()) {
+              logger.error(
+                {
+                  sessionId,
+                  iteration,
+                  skippedChunks: session.getSkippedChunkCount(),
+                  audioChunkCount,
+                },
+                `AssemblyAI WebSocket persistently down, aborting audio processing [iteration:${iteration}]`,
+              );
+              errorOccurred = true;
+              errorMessage = 'AssemblyAI WebSocket connection persistently down';
+              session.shouldStopProcessing = true;
+              break;
+            }
 
             if (audioChunkCount % 20 === 0) {
               // Heartbeat log

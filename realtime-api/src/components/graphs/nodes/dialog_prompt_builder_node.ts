@@ -61,6 +61,7 @@ export class DialogPromptBuilderNode extends CustomNode {
                 name: tool.name,
                 description: tool.description,
                 properties: JSON.stringify(tool.parameters || {}),
+                modelId: "inworld/routers/frugal-osquio"
               };
             }
             // If already in Inworld format or unknown, pass through

@@ -8,6 +8,7 @@ import {
   RemoteTTSNode,
   TextAggregatorNode,
   TextChunkingNode,
+  RemoteLLMChatNode
 } from '@inworld/runtime/graph';
 import * as os from 'os';
 import * as path from 'path';
@@ -24,6 +25,7 @@ import { StateUpdateNode } from '../nodes/state_update_node';
 import { TextInputNode } from '../nodes/text_input_node';
 import { TranscriptExtractorNode } from '../nodes/transcript_extractor_node';
 import { TTSRequestBuilderNode } from '../nodes/tts_request_builder_node';
+import {DialogPromptBuilderNode} from "../nodes/dialog_prompt_builder_node";
 
 /**
  * Inworld Realtime Graph implementation using AssemblyAI for STT.
@@ -51,9 +53,9 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
 
     const postfix = `-multimodal`;
 
-    const llmChatRoutingRequestNode = new LLMChatRoutingRequestNode({
-      id: `llm-chat-routing-request-node${postfix}`,
-    });
+    const dialogRequestBuilderNode = new DialogPromptBuilderNode({
+      id: `dialog-request-node${postfix}`,
+    })
 
     const textInputNode = new TextInputNode({
       id: `text-input-node${postfix}`,
@@ -61,16 +63,14 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
       reportToClient: true,
     });
 
-    const llmRouterNode = new RemoteLLMChatRoutingNode({
-      id: `llm-router-node${postfix}`,
-      defaultTimeout: 90,
-      defaults: {
-        textGenerationConfig: {
-          maxNewTokens: 320,
-        },
-      },
+    const llmChatNode = new RemoteLLMChatNode({
+      id: `llm-chat-node${postfix}`,
       reportToClient: true,
-    });
+      textGenerationConfig: {
+        maxNewTokens: 320,
+      },
+      stream: true,
+    })
 
     const textChunkingNode = new TextChunkingNode({
       id: `text-chunking-node${postfix}`,
@@ -117,11 +117,6 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
       }),
     });
 
-    const _ttsFirstNode = new RealtimeAgentTtsFirstChunkCheckingNode({
-      id: 'tts_first_chunk_checking_node',
-      reportToClient: true,
-    });
-
     // A second branch that only executes text chunking - we will not execute TTS when output_modality doesn't contain audio
 
     const textChunkingNodeTextOnly = new TextChunkingNode({
@@ -129,20 +124,18 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
       reportToClient: true,
     });
 
-    const llmRouterNodeTextOnly = new RemoteLLMChatRoutingNode({
-      id: `llm-router-node-text-only${postfix}`,
-      defaultTimeout: 90,
-      defaults: {
-        textGenerationConfig: {
-          maxNewTokens: 320,
-        },
-      },
+    const llmChatNodeTextOnly = new RemoteLLMChatNode({
+      id: `llm-chat-node-text-only${postfix}`,
       reportToClient: true,
-    });
+      textGenerationConfig: {
+        maxNewTokens: 320,
+      },
+      stream: true,
+    })
 
-    const llmChatRoutingRequestNodeTextOnly = new LLMChatRoutingRequestNode({
-      id: `llm-chat-routing-request-node-text-only${postfix}`,
-    });
+    const dialogRequestBuilderNodeTextOnly = new DialogPromptBuilderNode({
+      id: `dialog-request-builder-node-text-only${postfix}`,
+    })
 
     const textAggregatorNodeTextOnly = new TextAggregatorNode({
       id: `text-aggregator-node-text-only${postfix}`,
@@ -158,25 +151,25 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
     const graphName = `voice-agent${postfix}`;
     const graphBuilder = new GraphBuilder({
       id: graphName,
-      enableRemoteConfig: true,
+      enableRemoteConfig: false,
     });
 
     graphBuilder
       .addNode(textInputNode)
-      .addNode(llmChatRoutingRequestNode)
-      .addNode(llmRouterNode)
+      .addNode(dialogRequestBuilderNode)
+      .addNode(llmChatNode)
       .addNode(textChunkingNode)
       .addNode(textAggregatorNode)
       .addNode(ttsRequestBuilderNode)
       .addNode(ttsNode)
       .addNode(stateUpdateNode)
-      .addEdge(textInputNode, llmChatRoutingRequestNode, {
+      .addEdge(textInputNode, dialogRequestBuilderNode, {
         condition: async (input: State) => {
           return input?.output_modalities.includes('audio');
         },
       })
-      .addEdge(llmChatRoutingRequestNode, llmRouterNode)
-      .addEdge(llmRouterNode, textChunkingNode)
+      .addEdge(dialogRequestBuilderNode, llmChatNode)
+      .addEdge(llmChatNode, textChunkingNode)
       .addEdge(textInputNode, ttsRequestBuilderNode, {
         condition: async (input: State) => {
           return input?.output_modalities.includes('audio');
@@ -184,22 +177,22 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
       })
       .addEdge(textChunkingNode, ttsRequestBuilderNode)
       .addEdge(ttsRequestBuilderNode, ttsNode)
-      .addEdge(llmRouterNode, textAggregatorNode)
+      .addEdge(llmChatNode, textAggregatorNode)
       .addEdge(textAggregatorNode, stateUpdateNode)
       // Text-only outputs nodes/edges
-      .addNode(llmChatRoutingRequestNodeTextOnly)
+      .addNode(dialogRequestBuilderNodeTextOnly)
       .addNode(textChunkingNodeTextOnly)
-      .addNode(llmRouterNodeTextOnly)
+      .addNode(llmChatNodeTextOnly)
       .addNode(textAggregatorNodeTextOnly)
       .addNode(stateUpdateNodeTextOnly)
-      .addEdge(textInputNode, llmChatRoutingRequestNodeTextOnly, {
+      .addEdge(textInputNode, dialogRequestBuilderNodeTextOnly, {
         condition: async (input: State) => {
           return !input?.output_modalities.includes('audio') && input?.output_modalities.includes('text');
         },
       })
-      .addEdge(llmChatRoutingRequestNodeTextOnly, llmRouterNodeTextOnly)
-      .addEdge(llmRouterNodeTextOnly, textChunkingNodeTextOnly)
-      .addEdge(llmRouterNodeTextOnly, textAggregatorNodeTextOnly)
+      .addEdge(dialogRequestBuilderNodeTextOnly, llmChatNodeTextOnly)
+      .addEdge(llmChatNodeTextOnly, textChunkingNodeTextOnly)
+      .addEdge(llmChatNodeTextOnly, textAggregatorNodeTextOnly)
       .addEdge(textAggregatorNodeTextOnly, stateUpdateNodeTextOnly);
 
     // Validate configuration
