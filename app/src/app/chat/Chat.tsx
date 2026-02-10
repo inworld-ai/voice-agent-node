@@ -32,7 +32,7 @@ interface ChatProps {
   onFeedback?: (itemId: string, rating: FeedbackRating) => void;
 }
 
-let interval: number;
+let interval: any;
 let stream: MediaStream;
 let audioCtx: AudioContext;
 let audioWorkletNode: AudioWorkletNode;

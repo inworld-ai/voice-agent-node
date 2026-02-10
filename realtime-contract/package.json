@@ -1,0 +1,29 @@
+{
+  "name": "@realtime-service/realtime-contract",
+  "version": "1.0.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/index.js"
+    },
+    "./schemas": {
+      "types": "./dist/schemas.d.ts",
+      "import": "./dist/esm/schemas.js",
+      "require": "./dist/schemas.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc && tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc",
+    "build:esm": "tsc -p tsconfig.esm.json"
+  },
+  "dependencies": {
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.3"
+  }
+}

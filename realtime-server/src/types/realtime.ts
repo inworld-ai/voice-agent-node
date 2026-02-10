@@ -1,0 +1,75 @@
+/**
+ * Re-exports realtime contract types and extends RealtimeSession with server-only stream fields.
+ */
+
+import type { GraphTypes } from '@inworld/runtime/graph';
+import type { RealtimeSession as ContractRealtimeSession } from '@realtime-service/realtime-contract';
+
+export type {
+  AudioInputConfig,
+  AudioOutputConfig,
+  ClientEvent,
+  ClientEventBase,
+  ContentPart,
+  ConversationItem,
+  ConversationItemAddedEvent,
+  ConversationItemCreateEvent,
+  ConversationItemDeletedEvent,
+  ConversationItemDeleteEvent,
+  ConversationItemDoneEvent,
+  ConversationItemInputAudioTranscriptionCompletedEvent,
+  ConversationItemInputAudioTranscriptionDeltaEvent,
+  ConversationItemRetrievedEvent,
+  ConversationItemRetrieveEvent,
+  ConversationItemTruncatedEvent,
+  ConversationItemTruncateEvent,
+  ErrorEvent,
+  FunctionCallItem,
+  FunctionCallOutputItem,
+  InputAudioBufferAppendEvent,
+  InputAudioBufferClearedEvent,
+  InputAudioBufferClearEvent,
+  InputAudioBufferCommitEvent,
+  InputAudioBufferCommittedEvent,
+  InputAudioBufferSpeechStartedEvent,
+  InputAudioBufferSpeechStoppedEvent,
+  LLMSelectionConfig,
+  MessageItem,
+  RateLimitsUpdatedEvent,
+  Response,
+  ResponseAudioDeltaEvent,
+  ResponseAudioDoneEvent,
+  ResponseAudioTranscriptDeltaEvent,
+  ResponseAudioTranscriptDoneEvent,
+  ResponseCancelEvent,
+  ResponseConfig,
+  ResponseContentPartAddedEvent,
+  ResponseContentPartDoneEvent,
+  ResponseCreatedEvent,
+  ResponseCreateEvent,
+  ResponseDoneEvent,
+  ResponseFunctionCallArgumentsDeltaEvent,
+  ResponseFunctionCallArgumentsDoneEvent,
+  ResponseOutputItemAddedEvent,
+  ResponseOutputItemDoneEvent,
+  ResponseTextDeltaEvent,
+  ResponseTextDoneEvent,
+  SemanticVADTurnDetection,
+  ServerEvent,
+  ServerEventBase,
+  ServerVADTurnDetection,
+  Session,
+  SessionConfig,
+  SessionCreatedEvent,
+  SessionUpdatedEvent,
+  SessionUpdateEvent,
+  TextGenerationConfig,
+  Tool,
+  ToolChoice,
+  TurnDetection,
+} from '@realtime-service/realtime-contract';
+
+export interface RealtimeSession extends ContractRealtimeSession {
+  currentContentStream?: GraphTypes.ContentStream | null;
+  currentTTSStream?: GraphTypes.TTSOutputStream | null;
+}

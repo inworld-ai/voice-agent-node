@@ -5,19 +5,21 @@
   "license": "SEE LICENSE IN LICENSE.md and LICENSE-CPP-BINARIES.md",
   "workspaces": [
     "app",
-    "realtime-api"
+    "realtime-server",
+	"realtime-contract"
   ],
   "scripts": {
     "dev:app": "npm run dev --workspace=app",
-    "dev:api": "npm run start --workspace=realtime-api",
+    "dev:api": "npm run build:contract && npm run start --workspace=@realtime-service/realtime-server",
     "dev:all": "concurrently \"npm run dev:api\" \"npm run dev:app\" --names \"API,APP\" --prefix-colors \"cyan,yellow\"",
     "build:app": "npm run build --workspace=app",
-    "build:api": "npm run build --workspace=realtime-api",
+    "build:api": "npm run build:contract && npm run build --workspace=@realtime-service/realtime-server",
     "build:all": "npm run build:api && npm run build:app",
+	"build:contract": "npm run build --workspace=@realtime-service/realtime-contract",
     "start:app": "npm run start --workspace=app",
-    "start:api": "npm run start --workspace=realtime-api",
+    "start:api": "npm run start --workspace=realtime-server",
     "lint:app": "npm run lint --workspace=app",
-    "lint:api": "npm run lint --workspace=realtime-api || true"
+    "lint:api": "npm run lint --workspace=realtime-server || true"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
