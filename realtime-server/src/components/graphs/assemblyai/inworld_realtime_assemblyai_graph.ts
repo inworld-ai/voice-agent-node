@@ -267,6 +267,7 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
           endOfTurnConfidenceThreshold: turnDetectionSettings.endOfTurnConfidenceThreshold,
           minEndOfTurnSilenceWhenConfident: turnDetectionSettings.minEndOfTurnSilenceWhenConfident,
           maxTurnSilence: turnDetectionSettings.maxTurnSilence,
+          enableAudioDump: true
         },
       });
     }

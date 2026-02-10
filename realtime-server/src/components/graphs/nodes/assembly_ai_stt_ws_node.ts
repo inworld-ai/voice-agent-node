@@ -7,7 +7,7 @@ import { formatSession } from '../../../log-helpers';
 import logger from '../../../logger';
 import { Connection } from '../../../types/index';
 import { getAssemblyAISettingsForEagerness } from '../../../types/settings';
-import { float32ToPCM16 } from '../../audio/audio_utils';
+import { AudioDumper, float32ToPCM16 } from '../../audio/audio_utils';
 
 /**
  * Configuration interface for AssemblyAISTTWebSocketNode
@@ -31,6 +31,10 @@ export interface AssemblyAISTTWebSocketNodeConfig {
   language?: string;
   /** Keywords/keyterms to boost recognition */
   keytermsPrompt?: string[];
+  /** Enable audio dumping for debugging (writes WAV files) */
+  enableAudioDump?: boolean;
+  /** Directory to write audio dump files */
+  audioDumpDir?: string;
 }
 
 /**
@@ -312,6 +316,11 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
   private sessions: Map<string, AssemblyAISession> = new Map();
   private readonly TURN_COMPLETION_TIMEOUT_MS = 2000;
   private readonly MAX_TRANSCRIPTION_DURATION_MS = 40000;
+  
+  // Audio dumping for debugging
+  private enableAudioDump: boolean;
+  private audioDumpDir: string;
+  private audioDumpers: Map<string, AudioDumper> = new Map();
 
   constructor(props: { id?: string; config: AssemblyAISTTWebSocketNodeConfig }) {
     const { config, ...nodeProps } = props;
@@ -345,6 +354,8 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
     this.maxTurnSilence = config.maxTurnSilence || 1280;
     this.language = config.language || 'en';
     this.keytermsPrompt = config.keytermsPrompt || [];
+    this.enableAudioDump = config.enableAudioDump || false;
+    this.audioDumpDir = config.audioDumpDir || './audio_dumps';
 
     // Log the turn detection settings being used
     logger.info(
@@ -355,8 +366,9 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         sampleRate: this.sampleRate,
         formatTurns: this.formatTurns,
         language: this.language,
+        enableAudioDump: this.enableAudioDump,
       },
-      `AssemblyAI configured [threshold:${this.endOfTurnConfidenceThreshold}] [silence:${this.minEndOfTurnSilenceWhenConfident}ms] [lang:${this.language}]`,
+      `AssemblyAI configured [threshold:${this.endOfTurnConfidenceThreshold}] [silence:${this.minEndOfTurnSilenceWhenConfident}ms] [lang:${this.language}] [dump:${this.enableAudioDump}]`,
     );
   }
 
@@ -497,6 +509,18 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         (id) => this.sessions.delete(id),
       );
       this.sessions.set(sessionId, session);
+    }
+
+    // Get or create audio dumper for this session if enabled
+    let audioDumper: AudioDumper | undefined;
+    if (this.enableAudioDump) {
+      const dumperKey = `${sessionId}_${iteration}`;
+      audioDumper = new AudioDumper(dumperKey, this.sampleRate, 'assemblyai');
+      this.audioDumpers.set(dumperKey, audioDumper);
+      logger.info(
+        { sessionId, iteration },
+        `AudioDumper created for AssemblyAI session [iteration:${iteration}]`,
+      );
     }
 
     // Promise to capture the turn result
@@ -663,6 +687,11 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
 
             const pcm16Data = float32ToPCM16(float32Data);
 
+            // Dump audio chunk if debugging is enabled
+            if (audioDumper) {
+              audioDumper.addChunk(pcm16Data);
+            }
+
             session?.sendAudio(pcm16Data);
 
             if (audioChunkCount % 20 === 0) {
@@ -733,6 +762,19 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
         { sessionId, iteration, transcript: transcriptText },
         `AssemblyAI transcription complete [iteration:${iteration}]: "${transcriptText?.substring(0, 50)}..."`,
       );
+
+      // Write audio dump file if enabled
+      if (audioDumper) {
+        const stats = audioDumper.getStats();
+        logger.info(
+          { sessionId, iteration, stats },
+          `Writing audio dump [chunks:${stats.chunks}] [duration:${stats.durationSeconds.toFixed(2)}s]`,
+        );
+        await audioDumper.writeToFile(this.audioDumpDir);
+        // Clean up dumper
+        const dumperKey = `${sessionId}_${iteration}`;
+        this.audioDumpers.delete(dumperKey);
+      }
 
       // Clear interactionId on turn completion
       if (turnDetected) {
@@ -810,6 +852,19 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
       // Clean up message handler after execution ends
       if (session) {
         session.offMessage(messageHandler);
+      }
+
+      // Clean up audio dumper on error if it wasn't written yet
+      if (audioDumper) {
+        const dumperKey = `${sessionId}_${iteration}`;
+        if (this.audioDumpers.has(dumperKey)) {
+          logger.info(
+            { sessionId, iteration },
+            'Writing audio dump after error/finally block',
+          );
+          await audioDumper.writeToFile(this.audioDumpDir);
+          this.audioDumpers.delete(dumperKey);
+        }
       }
     }
   }
