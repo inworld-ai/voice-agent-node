@@ -80,6 +80,7 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
         maxNewTokens: 320,
       },
       reportToClient: true,
+      stream: true
     });
 
     const textChunkingNode = new TextChunkingNode({
@@ -141,6 +142,7 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
         maxNewTokens: 320,
       },
       reportToClient: true,
+      stream: true
     });
 
     const llmChatRoutingRequestNodeTextOnly = new LLMChatRoutingRequestNode({
