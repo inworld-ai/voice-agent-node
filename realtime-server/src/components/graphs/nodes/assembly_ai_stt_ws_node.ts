@@ -615,7 +615,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
               );
               isStreamExhausted = true;
 
-              connection.multimodalStreamManager.end();
+              connection.multimodalStreamManager?.end();
               break;
             }
 

@@ -64,7 +64,7 @@ export class InworldApp implements IRealtimeApp {
       useAssemblyAI: this.graphType === 'assemblyai',
       assemblyAIApiKey: this.assemblyAIApiKey,
       useMocks: this.useMocks,
-      useInworldStreamingSTT: true,
+      useInworldStreamingSTT: false,
     });
 
     logger.info({ graphType: this.graphType }, `✓ Audio input graph initialized (${this.graphType})`);
