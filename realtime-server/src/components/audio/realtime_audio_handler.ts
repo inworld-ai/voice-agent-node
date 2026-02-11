@@ -6,6 +6,7 @@ import * as RT from '../../types/realtime';
 import { RealtimeGraphExecutor } from '../graphs/realtime_graph_executor';
 import { RealtimeEventFactory } from '../realtime/realtime_event_factory';
 import { RealtimeSessionManager } from '../realtime/realtime_session_manager';
+import { pcm16ToFloat32, resample24kTo16k } from './audio_utils';
 import { MultimodalStreamManager } from './multimodal_stream_manager';
 
 export class RealtimeAudioHandler {
@@ -87,10 +88,14 @@ export class RealtimeAudioHandler {
     // Ensure the audio graph execution is running
     this.ensureAudioGraphExecution(connection, 'Audio');
 
-    // Decode base64 audio (Float32 at 16kHz from client - no resampling needed)
-    const audioBuffer = Buffer.from(event.audio, 'base64');
+    // Decode base64 audio (PCM16 at 24kHz from client)
+    const pcm16Buffer = Buffer.from(event.audio, 'base64');
+    const float32At24k = pcm16ToFloat32(pcm16Buffer);
+    const resampled = resample24kTo16k(float32At24k);
+    const data = Buffer.from(resampled.buffer, resampled.byteOffset, resampled.byteLength);
+
     connection.multimodalStreamManager!.pushAudio({
-      data: audioBuffer,
+      data,
       sampleRate: INPUT_SAMPLE_RATE, // 16kHz for Inworld graph
     });
   }

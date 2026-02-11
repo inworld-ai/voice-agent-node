@@ -31,6 +31,16 @@ const wsConnectionCounter = new client.Gauge({
   registers: [register],
 });
 
+// Custom memory gauges for metrics not covered by prom-client defaults.
+// These are especially important for services with native C++ addons
+// (like @inworld/runtime) where memory is allocated outside the V8 heap.
+const nativeMemoryGauge = new client.Gauge({
+  name: 'nodejs_native_memory_bytes',
+  help: 'Estimated native (non-V8) memory: RSS minus heapUsed minus external',
+  registers: [register],
+});
+
+
 const app = express();
 const server = createServer(app);
 const webSocket = new WebSocketServer({ noServer: true });
@@ -303,8 +313,17 @@ metricsServer.listen(METRICS_PORT, () => {
   logger.info({ port: METRICS_PORT }, `Metrics Server listening on port ${METRICS_PORT}`);
 });
 
+// Update native memory gauge every 10s for Prometheus scraping.
+// Captures non-V8 memory (RSS minus heap minus external) which is critical
+// for detecting leaks in the C++ addon layer.
+const memoryMonitorInterval = setInterval(() => {
+  const mem = process.memoryUsage();
+  nativeMemoryGauge.set(Math.max(0, mem.rss - mem.heapUsed - mem.external));
+}, 10_000);
+
 function done() {
   logger.info('Server is closing');
+  clearInterval(memoryMonitorInterval);
 
   // Handle the async shutdown properly
   appManager

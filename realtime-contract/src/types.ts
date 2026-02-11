@@ -238,15 +238,10 @@ export interface ConversationItemDeletedEvent extends ServerEventBase {
   item_id: string;
 }
 
-export interface InputAudioBufferCommittedEventMetadata {
-  endpointingLatencyMs?: number;
-}
-
 export interface InputAudioBufferCommittedEvent extends ServerEventBase {
   type: 'input_audio_buffer.committed';
   previous_item_id: string | null;
   item_id: string;
-  metadata?: InputAudioBufferCommittedEventMetadata;
 }
 
 export interface InputAudioBufferClearedEvent extends ServerEventBase {
@@ -451,7 +446,7 @@ export type ServerEvent =
 export interface AudioInputConfig {
   format: {
     type: 'audio/pcm';
-    rate: 16000;
+    rate: 16000 | 24000;
   };
   transcription?: {
     model: string;

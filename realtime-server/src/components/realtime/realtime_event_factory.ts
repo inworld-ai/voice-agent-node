@@ -127,14 +127,12 @@ export class RealtimeEventFactory {
   static inputAudioBufferCommitted(
     itemId: string,
     previousItemId: string | null = null,
-    metadata?: RT.InputAudioBufferCommittedEvent['metadata'],
   ): RT.InputAudioBufferCommittedEvent {
     return {
       event_id: uuidv4(),
       type: 'input_audio_buffer.committed',
       previous_item_id: previousItemId,
       item_id: itemId,
-      ...(metadata && Object.keys(metadata).length > 0 ? { metadata } : {}),
     };
   }
 

@@ -80,7 +80,7 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
         maxNewTokens: 320,
       },
       reportToClient: true,
-      stream: true
+      stream: true,
     });
 
     const textChunkingNode = new TextChunkingNode({
@@ -142,7 +142,7 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
         maxNewTokens: 320,
       },
       reportToClient: true,
-      stream: true
+      stream: true,
     });
 
     const llmChatRoutingRequestNodeTextOnly = new LLMChatRoutingRequestNode({
@@ -267,7 +267,6 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
           endOfTurnConfidenceThreshold: turnDetectionSettings.endOfTurnConfidenceThreshold,
           minEndOfTurnSilenceWhenConfident: turnDetectionSettings.minEndOfTurnSilenceWhenConfident,
           maxTurnSilence: turnDetectionSettings.maxTurnSilence,
-          enableAudioDump: true
         },
       });
     }

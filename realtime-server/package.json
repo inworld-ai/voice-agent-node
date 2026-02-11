@@ -22,7 +22,7 @@
   },
   "dependencies": {
     "@realtime-service/realtime-contract": "1.0.0",
-    "@inworld/runtime": "^1.0.0-rc.4",
+    "@inworld/runtime": "^1.0.0-rc.6",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",

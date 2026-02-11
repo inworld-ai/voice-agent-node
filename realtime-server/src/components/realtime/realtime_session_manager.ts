@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 
-import { DEFAULT_TTS_MODEL_ID } from '../../config';
+import { CLIENT_INPUT_SAMPLE_RATE, DEFAULT_TTS_MODEL_ID } from '../../config';
 import { IRealtimeApp } from '../../interfaces/app';
 import logger from '../../logger';
 import type { State } from '../../types';
@@ -61,7 +61,7 @@ export class RealtimeSessionManager {
           input: {
             format: {
               type: 'audio/pcm',
-              rate: 16000,
+              rate: CLIENT_INPUT_SAMPLE_RATE,
             },
             transcription: null,
             noise_reduction: null,

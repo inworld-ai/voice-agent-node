@@ -125,11 +125,6 @@ export const inputAudioBufferCommittedEventSchema = z.object({
   event_id: z.string(),
   item_id: z.string(),
   previous_item_id: z.string().nullable().optional(),
-  metadata: z
-    .object({
-      endpointingLatencyMs: z.number().optional(),
-    })
-    .optional(),
 });
 
 export const inputAudioBufferClearedEventSchema = z.object({

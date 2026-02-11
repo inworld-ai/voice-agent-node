@@ -172,6 +172,14 @@ export class RealtimeGraphExecutor {
 
       logger.info({ sessionId, resultCount }, `Audio stream processing complete: ${resultCount} interactions`);
     } catch (error) {
+      const conn = this.realtimeApp.connections[sessionId];
+      const isSessionClosing = !conn || conn.ws?.readyState !== 1; // 1 = OPEN
+      const isCancellation =
+        error instanceof Error && (error.message.includes('Operation cancelled') || (error as any).context === 'Operation cancelled');
+      if (isCancellation && isSessionClosing) {
+        logger.debug({ sessionId }, 'Audio graph stream cancelled (session closed)');
+        return;
+      }
       logger.error({ err: error, sessionId }, 'Error processing audio stream');
       throw error;
     } finally {
@@ -374,14 +382,8 @@ export class RealtimeGraphExecutor {
                   ? realtimeSession.conversationItems[realtimeSession.conversationItems.length - 1].id
                   : null;
 
-              const endpointingLatencyMs = (customData as { endpointing_latency_ms?: number }).endpointing_latency_ms;
-              const metadata =
-                endpointingLatencyMs !== undefined && typeof endpointingLatencyMs === 'number'
-                  ? { endpointingLatencyMs }
-                  : undefined;
-
               // Send committed event
-              this.send(RealtimeEventFactory.inputAudioBufferCommitted(itemId, previousItemId, metadata));
+              this.send(RealtimeEventFactory.inputAudioBufferCommitted(itemId, previousItemId));
 
               // Create conversation item for user transcription
               const item: RT.ConversationItem = {
