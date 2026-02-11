@@ -140,7 +140,7 @@ export const ConfigView = (props: ConfigViewProps) => {
   // Refs for recording
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const timerRef = useRef<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Drag and drop state
@@ -499,28 +499,16 @@ export const ConfigView = (props: ConfigViewProps) => {
 
   return (
     <>
-      {/* Full-width background */}
-      <Box
-        sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          width: '100vw',
-          height: '100vh',
-          backgroundColor: '#FAF7F5',
-          zIndex: -1,
-        }}
-      />
-
       {/* Content container */}
       <Container
         maxWidth="md"
         sx={{
-          minHeight: '100vh',
+          minHeight: '100%',
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'center',
-          py: 3,
+          justifyContent: 'flex-start',
+          pt: 6,
+          pb: 3,
           px: { xs: 2, sm: 3, md: 4 },
         }}
       >
@@ -556,7 +544,120 @@ export const ConfigView = (props: ConfigViewProps) => {
           Create a new speech to speech agent with any text prompt.
         </Typography>
 
-        {/* Text Box with Integrated Template Pills */}
+        {/* Template Pills - Outside the panel */}
+        <Box
+          sx={{
+            mb: 2,
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: 1,
+            justifyContent: 'center',
+          }}
+        >
+          {AGENT_TEMPLATES.map((template) => (
+            <Chip
+              key={template.id}
+              label={template.label}
+              icon={template.icon}
+              onClick={() => handleTemplateSelect(template)}
+              sx={{
+                fontSize: '12px',
+                fontWeight: 600,
+                fontFamily: 'Inter, Arial, sans-serif',
+                backgroundColor: '#FFFFFF',
+                border: '1.5px solid #AEA69F',
+                borderRadius: '20px',
+                color: '#3F3B37',
+                height: '30px',
+                px: 1.25,
+                cursor: 'pointer',
+                '&:hover': {
+                  backgroundColor: '#f4f0eb',
+                  borderColor: '#817973',
+                  color: '#222222',
+                },
+                '& .MuiChip-icon': {
+                  color: '#5C5652',
+                  fontSize: '14px',
+                  ml: 0.5,
+                  mr: -0.25,
+                },
+                '& .MuiChip-label': {
+                  px: 0.75,
+                  fontWeight: 600,
+                },
+              }}
+            />
+          ))}
+          {/* Generate Persona chip */}
+          <Chip
+            label="Generate Persona"
+            icon={<AutoAwesome sx={{ fontSize: 14 }} />}
+            onClick={() => setAiDialogOpen(true)}
+            sx={{
+              fontSize: '12px',
+              fontWeight: 600,
+              fontFamily: 'Inter, Arial, sans-serif',
+              background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+              border: 'none',
+              borderRadius: '20px',
+              color: '#FFFFFF',
+              height: '30px',
+              px: 1.25,
+              cursor: 'pointer',
+              '&:hover': {
+                background: 'linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%)',
+              },
+              '& .MuiChip-icon': {
+                color: '#FFFFFF',
+                fontSize: '14px',
+                ml: 0.5,
+                mr: -0.25,
+              },
+              '& .MuiChip-label': {
+                px: 0.75,
+                fontWeight: 600,
+              },
+            }}
+          />
+          {/* Add Custom Voice chip - at end */}
+          <Chip
+            label={clonedVoiceName ? 'Custom Voice ✓' : 'Add Custom Voice'}
+            icon={<Mic sx={{ fontSize: 14 }} />}
+            onClick={() => setVoiceCloneDialogOpen(true)}
+            sx={{
+              fontSize: '12px',
+              fontWeight: 600,
+              fontFamily: 'Inter, Arial, sans-serif',
+              background: clonedVoiceName 
+                ? 'linear-gradient(135deg, #28a745 0%, #20894d 100%)'
+                : 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)',
+              border: 'none',
+              borderRadius: '20px',
+              color: '#FFFFFF',
+              height: '30px',
+              px: 1.25,
+              cursor: 'pointer',
+              '&:hover': {
+                background: clonedVoiceName
+                  ? 'linear-gradient(135deg, #218838 0%, #1a7340 100%)'
+                  : 'linear-gradient(135deg, #c82333 0%, #a71d2a 100%)',
+              },
+              '& .MuiChip-icon': {
+                color: '#FFFFFF',
+                fontSize: '14px',
+                ml: 0.5,
+                mr: -0.25,
+              },
+              '& .MuiChip-label': {
+                px: 0.75,
+                fontWeight: 600,
+              },
+            }}
+          />
+        </Box>
+
+        {/* Text Input Panel */}
         <Box sx={{ mb: 4 }}>
           <Paper
             sx={{
@@ -601,120 +702,6 @@ export const ConfigView = (props: ConfigViewProps) => {
                 },
               }}
             />
-
-            {/* Template Pills at bottom */}
-            <Box
-              sx={{
-                p: '0 20px 16px 20px',
-                display: 'flex',
-                flexWrap: 'nowrap',
-                gap: 1,
-                borderTop: systemPrompt ? 'none' : '1px solid #E9E5E0',
-                pt: systemPrompt ? 0 : 2,
-              }}
-            >
-              {AGENT_TEMPLATES.map((template) => (
-                <Chip
-                  key={template.id}
-                  label={template.label}
-                  icon={template.icon}
-                  onClick={() => handleTemplateSelect(template)}
-                  sx={{
-                    fontSize: '12px',
-                    fontWeight: 600,
-                    fontFamily: 'Inter, Arial, sans-serif',
-                    backgroundColor: '#FFFFFF',
-                    border: '1.5px solid #AEA69F',
-                    borderRadius: '20px',
-                    color: '#3F3B37',
-                    height: '30px',
-                    px: 1.25,
-                    cursor: 'pointer',
-                    '&:hover': {
-                      backgroundColor: '#f4f0eb',
-                      borderColor: '#817973',
-                      color: '#222222',
-                    },
-                    '& .MuiChip-icon': {
-                      color: '#5C5652',
-                      fontSize: '14px',
-                      ml: 0.5,
-                      mr: -0.25,
-                    },
-                    '& .MuiChip-label': {
-                      px: 0.75,
-                      fontWeight: 600,
-                    },
-                  }}
-                />
-              ))}
-              {/* Generate Persona chip */}
-              <Chip
-                label="Generate Persona"
-                icon={<AutoAwesome sx={{ fontSize: 14 }} />}
-                onClick={() => setAiDialogOpen(true)}
-                sx={{
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  fontFamily: 'Inter, Arial, sans-serif',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  border: 'none',
-                  borderRadius: '20px',
-                  color: '#FFFFFF',
-                  height: '30px',
-                  px: 1.25,
-                  cursor: 'pointer',
-                  '&:hover': {
-                    background: 'linear-gradient(135deg, #5a6fd6 0%, #6a4190 100%)',
-                  },
-                  '& .MuiChip-icon': {
-                    color: '#FFFFFF',
-                    fontSize: '14px',
-                    ml: 0.5,
-                    mr: -0.25,
-                  },
-                  '& .MuiChip-label': {
-                    px: 0.75,
-                    fontWeight: 600,
-                  },
-                }}
-              />
-              {/* Add Custom Voice chip - at end */}
-              <Chip
-                label={clonedVoiceName ? 'Custom Voice ✓' : 'Add Custom Voice'}
-                icon={<Mic sx={{ fontSize: 14 }} />}
-                onClick={() => setVoiceCloneDialogOpen(true)}
-                sx={{
-                  fontSize: '12px',
-                  fontWeight: 600,
-                  fontFamily: 'Inter, Arial, sans-serif',
-                  background: clonedVoiceName 
-                    ? 'linear-gradient(135deg, #28a745 0%, #20894d 100%)'
-                    : 'linear-gradient(135deg, #dc3545 0%, #c82333 100%)',
-                  border: 'none',
-                  borderRadius: '20px',
-                  color: '#FFFFFF',
-                  height: '30px',
-                  px: 1.25,
-                  cursor: 'pointer',
-                  '&:hover': {
-                    background: clonedVoiceName
-                      ? 'linear-gradient(135deg, #218838 0%, #1a7340 100%)'
-                      : 'linear-gradient(135deg, #c82333 0%, #a71d2a 100%)',
-                  },
-                  '& .MuiChip-icon': {
-                    color: '#FFFFFF',
-                    fontSize: '14px',
-                    ml: 0.5,
-                    mr: -0.25,
-                  },
-                  '& .MuiChip-label': {
-                    px: 0.75,
-                    fontWeight: 600,
-                  },
-                }}
-              />
-            </Box>
           </Paper>
         </Box>
 
