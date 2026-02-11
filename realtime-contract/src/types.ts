@@ -179,6 +179,12 @@ export interface ResponseCancelEvent extends ClientEventBase {
   response_id?: string;
 }
 
+export interface ConversationItemFeedbackEvent extends ClientEventBase {
+  type: 'conversation.item.feedback';
+  item_id: string;
+  rating: 'thumbs_up' | 'thumbs_down' | null; // null = remove rating
+}
+
 export type ClientEvent =
   | SessionUpdateEvent
   | InputAudioBufferAppendEvent
@@ -189,7 +195,8 @@ export type ClientEvent =
   | ConversationItemDeleteEvent
   | ConversationItemRetrieveEvent
   | ResponseCreateEvent
-  | ResponseCancelEvent;
+  | ResponseCancelEvent
+  | ConversationItemFeedbackEvent;
 
 // ============================================================================
 // Server Events (sent from server to client)

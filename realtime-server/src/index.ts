@@ -17,6 +17,7 @@ import { abortStream, parseEnvironmentVariables } from './helpers';
 import { IAppManager } from './interfaces/app';
 import { formatContext, formatError, formatSession, formatWorkspace } from './log-helpers';
 import logger from './logger';
+import { trackEvent } from './services/mixpanel';
 
 const METRICS_PORT = 9000;
 const register = new client.Registry();
@@ -47,6 +48,9 @@ const webSocket = new WebSocketServer({ noServer: true });
 
 const metricsApp = express();
 const metricsServer = http.createServer(metricsApp);
+
+// Store RealtimeMessageHandler instances for accessing on disconnect
+const realtimeHandlers = new Map<string, { handler: RealtimeMessageHandler; sessionStartTime: number }>();
 
 app.use(cors());
 app.use(express.json());
@@ -143,6 +147,7 @@ function extractInworldApiKey(headers: http.IncomingHttpHeaders): string | undef
 webSocket.on('connection', async (ws, request) => {
   wsConnectionCounter.inc(1);
   const workspaceId = (request.headers['workspace-id'] as string) || process.env.WORKSPACE_ID || 'default';
+  const sessionStartTime = Date.now();
 
   try {
     logger.info({ workspaceId }, `WebSocket connection received ${formatWorkspace(workspaceId)}`);
@@ -215,6 +220,39 @@ webSocket.on('connection', async (ws, request) => {
       );
       wsConnectionCounter.dec(1);
 
+      // Emit Mixpanel feedback event before cleanup
+      const handlerInfo = realtimeHandlers.get(sessionId);
+      if (handlerInfo) {
+        try {
+          const feedbackTracker = handlerInfo.handler.getFeedbackTracker();
+          const summary = feedbackTracker.getSummary();
+          const sessionDurationMs = Date.now() - handlerInfo.sessionStartTime;
+
+          trackEvent('conversation_feedback', {
+            session_id: sessionId,
+            workspace_id: workspaceId,
+            thumbs_up: summary.thumbs_up,
+            thumbs_down: summary.thumbs_down,
+            no_reaction: summary.no_reaction,
+            total_assistant_messages: summary.total,
+            session_duration_ms: sessionDurationMs,
+          });
+
+          logger.info(
+            { sessionId, workspaceId, summary, sessionDurationMs },
+            `Mixpanel feedback event tracked ${formatContext(sessionId, workspaceId)}`,
+          );
+        } catch (error) {
+          logger.error(
+            { error, sessionId, workspaceId },
+            `Error tracking Mixpanel feedback event ${formatContext(sessionId, workspaceId)}${formatError(error)}`,
+          );
+        }
+
+        // Clean up handler reference
+        realtimeHandlers.delete(sessionId);
+      }
+
       const connection = realtimeApp.connections[sessionId];
       if (connection) {
         // Step 1: Abort any active graph executions FIRST
@@ -257,6 +295,9 @@ webSocket.on('connection', async (ws, request) => {
     const realtimeHandler = new RealtimeMessageHandler(realtimeApp, sessionId, (data: any) =>
       ws.send(JSON.stringify(data)),
     );
+
+    // Store handler for access on disconnect
+    realtimeHandlers.set(sessionId, { handler: realtimeHandler, sessionStartTime });
 
     // Initialize session and send session.created event
     logger.info({ sessionId, workspaceId }, `Initializing realtime session ${formatContext(sessionId, workspaceId)}`);

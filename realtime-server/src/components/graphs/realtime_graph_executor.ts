@@ -10,6 +10,7 @@ import { Connection } from '../../types/index';
 import * as RT from '../../types/realtime';
 import { convertToPCM16Base64 } from '../audio/audio_utils';
 import { MultimodalStreamManager } from '../audio/multimodal_stream_manager';
+import { FeedbackTracker } from '../feedback/feedback_tracker';
 import { RealtimeEventFactory } from '../realtime/realtime_event_factory';
 import { RealtimeSessionManager } from '../realtime/realtime_session_manager';
 
@@ -29,6 +30,7 @@ export class RealtimeGraphExecutor {
     private send: (data: RT.ServerEvent) => void,
     private sessionManager: RealtimeSessionManager,
     private sessionStartTime: number,
+    private feedbackTracker: FeedbackTracker,
   ) {}
 
   cancelCurrentResponse(reason: 'turn_detected' | 'client_cancelled'): void {
@@ -613,6 +615,11 @@ export class RealtimeGraphExecutor {
 
         item.status = 'completed';
         this.send(RealtimeEventFactory.responseOutputItemDone(response.id, outputIndex!, item));
+
+        // Track assistant item for feedback
+        if (item.role === 'assistant' && itemId) {
+          this.feedbackTracker.trackAssistantItem(itemId);
+        }
       }
 
       // Add to conversation items
@@ -767,6 +774,11 @@ export class RealtimeGraphExecutor {
 
           item.status = 'completed';
           this.send(RealtimeEventFactory.responseOutputItemDone(response.id, outputIndex!, item));
+
+          // Track assistant item for feedback
+          if (item.role === 'assistant' && itemId) {
+            this.feedbackTracker.trackAssistantItem(itemId);
+          }
 
           // Clear TTS tracking on successful completion
           this.currentTTSInteractionId = null;

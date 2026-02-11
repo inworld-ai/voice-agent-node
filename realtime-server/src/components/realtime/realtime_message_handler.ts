@@ -6,6 +6,7 @@ import { formatContext } from '../../log-helpers';
 import logger from '../../logger';
 import * as RT from '../../types/realtime';
 import { RealtimeAudioHandler } from '../audio/realtime_audio_handler';
+import { FeedbackTracker } from '../feedback/feedback_tracker';
 import { RealtimeGraphExecutor } from '../graphs/realtime_graph_executor';
 import { RealtimeEventFactory } from './realtime_event_factory';
 import { RealtimeSessionManager } from './realtime_session_manager';
@@ -14,6 +15,7 @@ export class RealtimeMessageHandler {
   private sessionManager: RealtimeSessionManager;
   private audioHandler: RealtimeAudioHandler;
   private graphExecutor: RealtimeGraphExecutor;
+  private feedbackTracker: FeedbackTracker;
   private processingQueue: (() => Promise<void>)[] = [];
   private isProcessing = false;
   private sessionStartTime: number = Date.now();
@@ -23,6 +25,7 @@ export class RealtimeMessageHandler {
     private sessionKey: string,
     private send: (data: RT.ServerEvent) => void,
   ) {
+    this.feedbackTracker = new FeedbackTracker(sessionKey);
     this.sessionManager = new RealtimeSessionManager(realtimeApp, sessionKey, send, this.sessionStartTime);
     this.graphExecutor = new RealtimeGraphExecutor(
       realtimeApp,
@@ -30,6 +33,7 @@ export class RealtimeMessageHandler {
       send,
       this.sessionManager,
       this.sessionStartTime,
+      this.feedbackTracker,
     );
     this.audioHandler = new RealtimeAudioHandler(
       realtimeApp,
@@ -71,6 +75,13 @@ export class RealtimeMessageHandler {
   }
 
   /**
+   * Get the feedback tracker instance
+   */
+  getFeedbackTracker(): FeedbackTracker {
+    return this.feedbackTracker;
+  }
+
+  /**
    * Handle incoming WebSocket messages
    */
   async handleMessage(data: RawData): Promise<void> {
@@ -95,6 +106,12 @@ export class RealtimeMessageHandler {
       // 2. Audio append - needs to flow continuously without blocking
       if (event.type === 'input_audio_buffer.append') {
         await this.audioHandler.handleInputAudioBufferAppend(event);
+        return;
+      }
+
+      // 3. Feedback - process immediately (no queue needed, like response.cancel)
+      if (event.type === 'conversation.item.feedback') {
+        this.feedbackTracker.recordFeedback(event.item_id, event.rating);
         return;
       }
 

@@ -855,13 +855,27 @@ export default function HomePage() {
     cleanupChatState(true);
   }, [cleanupChatState]);
 
-  // Feedback handler placeholder - will send to server via WebSocket in the future
+  // Feedback handler - sends feedback to server via WebSocket
   const handleFeedback = useCallback(
     (itemId: string, rating: 'thumbs_up' | 'thumbs_down' | null) => {
       console.log(`[Feedback] item=${itemId} rating=${rating}`);
-      // TODO: Send conversation.item.feedback event via WebSocket once server supports it
+      
+      if (connection && connection.readyState === WebSocket.OPEN) {
+        try {
+          connection.send(JSON.stringify({
+            type: 'conversation.item.feedback',
+            item_id: itemId,
+            rating,
+          }));
+          console.log('✅ Feedback sent to server');
+        } catch (error) {
+          console.error('❌ Error sending feedback:', error);
+        }
+      } else {
+        console.warn('⚠️ WebSocket not open, cannot send feedback');
+      }
     },
-    [],
+    [connection],
   );
 
   const resetForm = useCallback(() => {

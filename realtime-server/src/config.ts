@@ -10,3 +10,6 @@ export const WS_APP_PORT = 4000; // WebSocket server port
 // Voice and TTS Configuration
 export const DEFAULT_VOICE_ID = process.env.VOICE_ID || 'Dennis';
 export const DEFAULT_TTS_MODEL_ID = process.env.TTS_MODEL_ID || 'inworld-tts-1.5-mini';
+
+// Mixpanel Configuration
+export const MIXPANEL_TOKEN = process.env.MIXPANEL_TOKEN;
