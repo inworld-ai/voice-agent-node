@@ -348,10 +348,11 @@ export const ConfigView = (props: ConfigViewProps) => {
   }, [audioBlob]);
 
   // Extract persona name from system prompt (e.g., "You are Olivia, ..." -> "Olivia")
-  const getPersonaName = useCallback(() => {
+  // Returns null if the prompt doesn't match the expected format
+  const getPersonaName = useCallback((): string | null => {
     const prompt = getValues('agent.systemPrompt') || '';
     const match = prompt.match(/^You are ([^,]+),/);
-    return match ? match[1].trim() : 'your persona';
+    return match ? match[1].trim() : null;
   }, [getValues]);
 
   const handleTemplateSelect = useCallback(
@@ -472,8 +473,10 @@ export const ConfigView = (props: ConfigViewProps) => {
       if (voiceOption === 'custom' && finalVoiceId) {
         // Extract name from the just-set system prompt
         const nameMatch = result.systemPrompt?.match(/^You are ([^,]+),/);
-        const personaName = nameMatch ? nameMatch[1].trim() : 'your persona';
-        setSnackbarMessage(`Custom voice has been applied to your voice agent ${personaName}`);
+        const personaName = nameMatch ? nameMatch[1].trim() : null;
+        setSnackbarMessage(personaName
+          ? `Custom voice has been applied to your voice agent ${personaName}`
+          : 'Custom voice has been applied to your voice agent');
         setSnackbarOpen(true);
       }
     } catch (error: any) {
@@ -491,7 +494,9 @@ export const ConfigView = (props: ConfigViewProps) => {
 
       // Show confirmation notification with persona name
       const personaName = getPersonaName();
-      setSnackbarMessage(`Custom voice has been applied to your voice agent ${personaName}`);
+      setSnackbarMessage(personaName
+        ? `Custom voice has been applied to your voice agent ${personaName}`
+        : 'Custom voice has been applied to your voice agent');
       setSnackbarOpen(true);
     },
     [setValue, getValues, getPersonaName]
