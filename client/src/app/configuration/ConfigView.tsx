@@ -12,6 +12,7 @@ import {
   Stop,
 } from '@mui/icons-material';
 import {
+  Alert,
   Box,
   Button,
   Chip,
@@ -29,6 +30,7 @@ import {
   Radio,
   RadioGroup,
   Select,
+  Snackbar,
   TextField,
   Tooltip,
   Typography,
@@ -146,6 +148,10 @@ export const ConfigView = (props: ConfigViewProps) => {
 
   // Voice Clone state (for standalone dialog)
   const [voiceCloneDialogOpen, setVoiceCloneDialogOpen] = useState(false);
+
+  // Snackbar state (voice clone confirmation)
+  const [snackbarOpen, setSnackbarOpen] = useState(false);
+  const [snackbarMessage, setSnackbarMessage] = useState('');
   
   // Use saved voice name from localStorage, or local state for newly cloned voices
   const clonedVoiceName = savedVoiceName || null;
@@ -341,6 +347,14 @@ export const ConfigView = (props: ConfigViewProps) => {
     }
   }, [audioBlob]);
 
+  // Extract persona name from system prompt (e.g., "You are Olivia, ..." -> "Olivia")
+  // Returns null if the prompt doesn't match the expected format
+  const getPersonaName = useCallback((): string | null => {
+    const prompt = getValues('agent.systemPrompt') || '';
+    const match = prompt.match(/^You are ([^,]+),/);
+    return match ? match[1].trim() : null;
+  }, [getValues]);
+
   const handleTemplateSelect = useCallback(
     (template: (typeof AGENT_TEMPLATES)[0]) => {
       setValue('agent.systemPrompt', template.systemPrompt);
@@ -454,6 +468,17 @@ export const ConfigView = (props: ConfigViewProps) => {
       // Close dialog and reset
       setAiDialogOpen(false);
       setCharacterDescription('');
+
+      // Show confirmation if custom voice was applied
+      if (voiceOption === 'custom' && finalVoiceId) {
+        // Extract name from the just-set system prompt
+        const nameMatch = result.systemPrompt?.match(/^You are ([^,]+),/);
+        const personaName = nameMatch ? nameMatch[1].trim() : null;
+        setSnackbarMessage(personaName
+          ? `Custom voice has been applied to your voice agent ${personaName}`
+          : 'Custom voice has been applied to your voice agent');
+        setSnackbarOpen(true);
+      }
     } catch (error: any) {
       setGenerateError(error.message || 'Failed to generate character');
     } finally {
@@ -466,8 +491,15 @@ export const ConfigView = (props: ConfigViewProps) => {
       setValue('voiceId', voiceId);
       setValue('voiceName', displayName); // Save voice name to localStorage
       saveConfiguration(getValues());
+
+      // Show confirmation notification with persona name
+      const personaName = getPersonaName();
+      setSnackbarMessage(personaName
+        ? `Custom voice has been applied to your voice agent ${personaName}`
+        : 'Custom voice has been applied to your voice agent');
+      setSnackbarOpen(true);
     },
-    [setValue, getValues]
+    [setValue, getValues, getPersonaName]
   );
 
   return (
@@ -1157,6 +1189,28 @@ export const ConfigView = (props: ConfigViewProps) => {
           onClose={() => setVoiceCloneDialogOpen(false)}
           onVoiceCloned={handleVoiceCloned}
         />
+
+        {/* Voice Clone Confirmation Snackbar */}
+        <Snackbar
+          open={snackbarOpen}
+          autoHideDuration={5000}
+          onClose={() => setSnackbarOpen(false)}
+          anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+          sx={{ bottom: '12vh !important' }}
+        >
+          <Alert
+            onClose={() => setSnackbarOpen(false)}
+            severity="success"
+            variant="filled"
+            sx={{
+              fontFamily: 'Inter, Arial, sans-serif',
+              fontSize: '14px',
+              borderRadius: '8px',
+            }}
+          >
+            {snackbarMessage}
+          </Alert>
+        </Snackbar>
 
         {/* Create Button - Only when prompt exists */}
         {systemPrompt && (
