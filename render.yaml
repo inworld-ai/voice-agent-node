@@ -1,0 +1,36 @@
+# -----------------------------------------------------------
+# Render Blueprint — voice-agent-smart-router
+#
+# Defines both the client (Next.js) and server (realtime)
+# services as Docker-based web services.
+#
+# Deploy with:  render blueprint launch
+# Docs:         https://render.com/docs/blueprint-spec
+# -----------------------------------------------------------
+
+services:
+  # ---- Client (Next.js app) ----
+  - type: web
+    runtime: docker
+    name: voice-agent-smart-router-client
+    plan: pro               # 2 CPU / 4 GB
+    dockerfilePath: ./app/Dockerfile
+    dockerContext: .         # build context is repo root
+    healthCheckPath: /
+    envVars:
+      - key: PORT
+        value: "8080"
+      - key: NODE_ENV
+        value: production
+
+  # ---- Server (realtime-server + realtime-contract) ----
+  - type: web
+    runtime: docker
+    name: voice-agent-smart-router-server
+    plan: pro               # 2 CPU / 4 GB
+    dockerfilePath: ./realtime-server/Dockerfile
+    dockerContext: .         # build context is repo root
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
