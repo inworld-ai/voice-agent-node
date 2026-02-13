@@ -798,6 +798,7 @@ export class AssemblyAISTTWebSocketNode extends CustomNode {
               if (session) session.shouldStopProcessing = true;
               turnResolve(transcriptText);
               // For text input, we immediately complete and bypass STT
+              connection.multimodalStreamManager?.end();
               break;
             }
 
