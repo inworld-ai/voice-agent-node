@@ -109,8 +109,9 @@ export class RealtimeGraphExecutor {
       userContext: {
         attributes: {
           'inworld.tenant': workspaceId,
+          'user_id': sessionId,
         },
-        targetingKey: uuidv4(),
+        targetingKey: sessionId,
       },
       userCredentials: {
         inworldApiKey: apiKey,
