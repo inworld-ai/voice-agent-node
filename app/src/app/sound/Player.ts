@@ -15,7 +15,6 @@ export class Player {
   private gainNode!: GainNode;
   private nextStartTime = 0;
   private currentSources: AudioBufferSourceNode[] = [];
-  private fadeTime = 0.005; // 5ms crossfade to eliminate clicks
 
   async preparePlayer(): Promise<void> {
     // Initialize Web Audio API context
@@ -98,6 +97,11 @@ export class Player {
     this.isPlaying = false;
   };
 
+  /**
+   * Decode a base64 PCM16 chunk and schedule it for gapless playback.
+   * Chunks from a continuous TTS stream share sample-level continuity,
+   * so no per-chunk fade is applied -- that would introduce audible dips.
+   */
   private async playAudioChunk(base64Chunk: string): Promise<void> {
     // Ensure audio context is initialized
     if (!this.audioContext) {
@@ -111,18 +115,18 @@ export class Player {
     }
     
     try {
+      // Decode base64 → raw bytes
       const binaryString = atob(base64Chunk);
       const bytes = new Uint8Array(binaryString.length);
       for (let i = 0; i < binaryString.length; i++) {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      // Convert bytes to Float32Array (PCM Float32 samples)
-      const float32Samples = new Float32Array(bytes.buffer);
+      // Interpret as PCM16 (Int16) and convert to Float32 for Web Audio API
+      const int16Samples = new Int16Array(bytes.buffer);
+      const numSamples = int16Samples.length;
       const numChannels = 1;
-      const numSamples = float32Samples.length;
 
-      // Create AudioBuffer directly from Float32Array samples
       const audioBuffer = this.audioContext.createBuffer(
         numChannels,
         numSamples,
@@ -130,35 +134,22 @@ export class Player {
       );
 
       const channelData = audioBuffer.getChannelData(0);
-      channelData.set(float32Samples);
+      for (let i = 0; i < numSamples; i++) {
+        channelData[i] = int16Samples[i] / 32768.0;
+      }
 
       const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
+      source.connect(this.gainNode);
 
-      // Apply short fade-in to eliminate clicks at chunk boundaries
-      const fadeGain = this.audioContext.createGain();
-      fadeGain.connect(this.gainNode);
-      source.connect(fadeGain);
-
-      // Calculate timing for gapless playback
+      // Schedule for gapless playback
       const currentTime = this.audioContext.currentTime;
       const startTime = Math.max(
         currentTime,
         this.nextStartTime > 0 ? this.nextStartTime : currentTime,
       );
 
-      // Apply fade-in at the start
-      fadeGain.gain.setValueAtTime(0, startTime);
-      fadeGain.gain.linearRampToValueAtTime(1, startTime + this.fadeTime);
-
-      // Apply fade-out at the end
-      const endTime = startTime + audioBuffer.duration;
-      fadeGain.gain.setValueAtTime(1, endTime - this.fadeTime);
-      fadeGain.gain.linearRampToValueAtTime(0, endTime);
-
-      // Schedule playback
       source.start(startTime);
-      source.stop(endTime);
 
       // Track source for cleanup
       this.currentSources.push(source);
@@ -172,7 +163,7 @@ export class Player {
       };
 
       // Update next start time for seamless chaining
-      this.nextStartTime = endTime;
+      this.nextStartTime = startTime + audioBuffer.duration;
     } catch (error) {
       console.error('Failed to decode/play audio chunk:', error);
     }

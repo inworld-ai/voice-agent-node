@@ -113,31 +113,8 @@ export default function HomePage() {
       // Currently the server implementation sends PCM16 base64 (Int16Array at 24kHz)
       if (event.delta) {
         try {
-          // Decode base64 to get PCM16 Int16Array bytes
-          const binaryString = atob(event.delta);
-          const bytes = new Uint8Array(binaryString.length);
-          for (let i = 0; i < binaryString.length; i++) {
-            bytes[i] = binaryString.charCodeAt(i);
-          }
-
-          // Convert to Int16Array (PCM16)
-          const int16Array = new Int16Array(bytes.buffer, bytes.byteOffset, bytes.length / 2);
-          
-          // Convert Int16 to Float32 for Player
-          const float32Array = new Float32Array(int16Array.length);
-          for (let i = 0; i < int16Array.length; i++) {
-            float32Array[i] = int16Array[i] / 32768.0; // Convert to -1.0 to 1.0 range
-          }
-          
-          // Convert Float32Array to base64 for Player (Player expects base64 Float32 PCM)
-          const floatBytes = new Uint8Array(float32Array.buffer);
-          let binary = '';
-          for (let i = 0; i < floatBytes.length; i++) {
-            binary += String.fromCharCode(floatBytes[i]);
-          }
-          const base64Float32 = btoa(binary);
-          
-          player.addToQueue({ audio: { chunk: base64Float32 } });
+          // Pass PCM16 base64 directly to Player (it handles the conversion)
+          player.addToQueue({ audio: { chunk: event.delta } });
 
           // Track first audio chunk for latency calculation
           const itemId = event.item_id;
