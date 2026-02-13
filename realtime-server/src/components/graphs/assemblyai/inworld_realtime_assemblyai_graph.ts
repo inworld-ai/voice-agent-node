@@ -25,6 +25,7 @@ import { StateUpdateNode } from '../nodes/state_update_node';
 import { TextInputNode } from '../nodes/text_input_node';
 import { TranscriptExtractorNode } from '../nodes/transcript_extractor_node';
 import { TTSRequestBuilderNode } from '../nodes/tts_request_builder_node';
+import { ReasoningConfig_Effort } from '@inworld/runtime/primitives/llm';
 
 /**
  * STT Node type - can be either AssemblyAISTTWebSocketNode or InworldStreamingSTTNode
@@ -77,7 +78,10 @@ export class InworldRealtimeAssemblyAIGraph implements IInworldGraph {
       id: `llm-router-node${postfix}`,
       // defaultTimeout: 90,
       textGenerationConfig: {
-        maxNewTokens: 320,
+        maxNewTokens: 1000,
+        reasoning: {
+          effort: 'low' as unknown as ReasoningConfig_Effort,
+        },
       },
       reportToClient: true,
       stream: true,
