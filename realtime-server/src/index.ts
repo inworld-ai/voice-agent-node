@@ -229,8 +229,7 @@ webSocket.on('connection', async (ws, request) => {
           const sessionDurationMs = Date.now() - handlerInfo.sessionStartTime;
 
           trackEvent('conversation_feedback', {
-            session_id: sessionId,
-            workspace_id: workspaceId,
+            distinct_id: sessionId,
             thumbs_up: summary.thumbs_up,
             thumbs_down: summary.thumbs_down,
             no_reaction: summary.no_reaction,
