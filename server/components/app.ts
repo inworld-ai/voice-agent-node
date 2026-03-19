@@ -1,4 +1,5 @@
 import { stopInworldRuntime } from '@inworld/runtime';
+import { DeviceType } from '@inworld/runtime/primitives/platform';
 import { VAD } from '@inworld/runtime/primitives/vad';
 import { v4 } from 'uuid';
 const { validationResult } = require('express-validator');
@@ -50,7 +51,7 @@ export class InworldApp {
     this.vadClient = await VAD.create({
       localConfig: {
         modelPath: this.vadModelPath,
-        device: { type: 'CPU' as any, index: 0 },
+        device: { type: DeviceType.CPU, index: 0 },
         defaultConfig: { speechThreshold: 0.5 },
       },
     });
