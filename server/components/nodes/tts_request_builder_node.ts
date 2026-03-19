@@ -40,9 +40,7 @@ export class TTSRequestBuilderNode extends CustomNode {
     console.log(`TTSRequestBuilder: Using voice ${voiceId} for session ${sessionId}`);
 
     // Create TTS request with dynamic voice
-    return GraphTypes.TTSRequest.withStream(textStream, {
-      speakerId: voiceId,
-    });
+    return GraphTypes.TTSRequest.withStream(textStream, { id: voiceId });
   }
 }
 

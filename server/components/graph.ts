@@ -172,11 +172,12 @@ export class InworldGraphWrapper {
 
     const ttsNode = new RemoteTTSNode({
       id: `tts-node${postfix}`,
-      speakerId: voiceId, // Default voice (fallback only - TTSRequestBuilderNode overrides this per session)
-      modelId: ttsModelId,
-      sampleRate: TTS_SAMPLE_RATE,
-      temperature: 1.1,
-      speakingRate: 1,
+      voice: { id: voiceId },
+      synthesisConfig: {
+        modelId: ttsModelId,
+        postprocessing: { sampleRate: TTS_SAMPLE_RATE },
+        inference: { temperature: 1.1, speakingRate: 1 },
+      },
     });
 
     const graphName = `voice-agent${postfix}`;
