@@ -89,13 +89,14 @@ export class MessageHandler {
         return;
       }
 
-      // Flatten audio array into single buffer
-      const audioData: number[] = [];
+      // Flatten audio array into a Float32Array and wrap in Buffer
+      const floatValues: number[] = [];
       for (let i = 0; i < message.audio.length; i++) {
         Object.values(message.audio[i]).forEach((value) => {
-          audioData.push(value as number);
+          floatValues.push(value as number);
         });
       }
+      const audioData = Buffer.from(new Float32Array(floatValues).buffer);
 
       // Initialize audio stream manager if not already present
       if (!connection.audioStreamManager) {
@@ -193,18 +194,14 @@ export class MessageHandler {
     graphWrapper: InworldGraphWrapper;
     audioStreamManager: AudioStreamManager;
   }) {
-    // Create a DataStream input following the test pattern
-    // Tag the generator with 'BaseData' type so framework creates DataStream<BaseData>
-    async function* audioStreamGenerator() {
-      for await (const audioChunk of audioStreamManager.createStream()) {
-        yield audioChunk;
+    async function* multimodalStreamGenerator() {
+      for await (const content of audioStreamManager.createStream()) {
+        yield content;
       }
     }
 
-    // Create the tagged stream with metadata
-    // The metadata (sessionId, state) will be accessible to nodes via DataStreamWithMetadata
-    const taggedStream = Object.assign(audioStreamGenerator(), {
-      _iw_type: 'Audio',
+    const taggedStream = Object.assign(multimodalStreamGenerator(), {
+      type: 'MultimodalContent',
     });
 
     const { outputStream } = await graphWrapper.graph.start(taggedStream, {

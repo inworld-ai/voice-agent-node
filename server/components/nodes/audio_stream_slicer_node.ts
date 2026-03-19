@@ -74,15 +74,14 @@ export class AudioStreamSlicerNode extends CustomNode {
    */
   async process(
     context: ProcessContext,
-    input0: GraphTypes.AudioChunkStream,
+    input0: AsyncIterableIterator<GraphTypes.MultimodalContent>,
     input: DataStreamWithMetadata,
   ): Promise<DataStreamWithMetadata> {
-    // Extract AudioChunkStream from either input type
-    const audioStream =
+    const multimodalStream =
       input !== undefined &&
       input !== null &&
       input instanceof DataStreamWithMetadata
-        ? (input.toStream() as GraphTypes.AudioChunkStream)
+        ? (input.toStream() as any as AsyncIterableIterator<GraphTypes.MultimodalContent>)
         : input0;
 
     const sessionId = context.getDatastore().get('sessionId') as string;
@@ -122,7 +121,8 @@ export class AudioStreamSlicerNode extends CustomNode {
     // State for tracking speech and endpointing
     let speechDetected = false;
     let endpointingLatency = 0;
-    const accumulatedAudio: number[] = [];
+    const accumulatedBuffers: Buffer[] = [];
+    let totalSamples = 0;
     let sampleRate = this.sampleRate;
     let isStreamExhausted = false;
     if (connection?.unloaded) {
@@ -132,36 +132,41 @@ export class AudioStreamSlicerNode extends CustomNode {
       throw Error(`Failed to read connection for sessionId:${sessionId}`);
     }
 
-    // Process chunks until we detect a complete interaction or stream ends
     while (!isStreamExhausted) {
-      const result: { data: Float32Array; sampleRate: number; done: boolean } =
-        await audioStream.next();
+      const result = await multimodalStream.next();
 
       if (result.done) {
         console.log(
-          `Stream exhausted after ${accumulatedAudio.length} samples`,
+          `Stream exhausted after ${totalSamples} samples`,
         );
         isStreamExhausted = true;
-        // Finish processing the current interaction
+        break;
       }
 
-      // Update sample rate from chunk
-      sampleRate = result.sampleRate;
+      const content = result.value as GraphTypes.MultimodalContent;
+      if (content.audio === undefined || content.audio === null) {
+        continue;
+      }
 
-      // Detect voice activity in this chunk
+      const audioData = content.audio.data;
+      if (!audioData || audioData.length === 0) {
+        continue;
+      }
+
+      const float32Length = audioData.byteLength / 4;
+
       const isSpeech = await this.detectSpeech({
-        data: result.data,
-        sampleRate: result.sampleRate,
+        data: audioData,
+        sampleRate: this.sampleRate,
       });
 
-      const chunkDurationMs = (result.data.length / result.sampleRate) * 1000;
+      const chunkDurationMs = (float32Length / this.sampleRate) * 1000;
 
       if (isSpeech) {
         console.log(`[${new Date().toISOString()}] Speech detected...`);
-        // Speech detected - accumulate this chunk
-        accumulatedAudio.push(...Array.from(result.data));
+        accumulatedBuffers.push(audioData);
+        totalSamples += float32Length;
 
-        // Reset endpointing latency counter and mark speech as detected
         speechDetected = true;
         endpointingLatency = 0;
       } else if (speechDetected) {
@@ -173,7 +178,7 @@ export class AudioStreamSlicerNode extends CustomNode {
         if (endpointingLatency >= this.pauseDurationMs) {
           // Complete the interaction - we have speech without trailing silence
           console.log(
-            `[Iteration ${iteration}] Interaction complete: ${accumulatedAudio.length} samples, ` +
+            `[Iteration ${iteration}] Interaction complete: ${totalSamples} samples, ` +
               `${endpointingLatency.toFixed(0)}ms endpointing latency (not included)`,
           );
           break;
@@ -184,9 +189,9 @@ export class AudioStreamSlicerNode extends CustomNode {
 
     // Create the completed interaction audio (if we have data)
     const completedAudio =
-      speechDetected && accumulatedAudio.length > 0
+      speechDetected && accumulatedBuffers.length > 0
         ? new GraphTypes.Audio({
-            data: accumulatedAudio,
+            data: Buffer.concat(accumulatedBuffers),
             sampleRate: sampleRate,
           })
         : null;
@@ -196,33 +201,21 @@ export class AudioStreamSlicerNode extends CustomNode {
       `[Iteration ${iteration}] Returning DataStreamWithMetadata (stream_exhausted: ${isStreamExhausted})`,
     );
 
-    // If stream is exhausted, create an empty/completed generator instead of passing the exhausted stream
-    // This prevents the C++ runtime from trying to iterate over an already-ended stream
-    const streamToReturn = isStreamExhausted
-      ? Object.assign(
-          (async function* () {
-            // Empty generator that immediately completes
-            return;
-          })(),
-          {
-            _iw_type: 'Audio',
-            abort: () => {
-              // No-op for exhausted stream
-            },
-          },
-        )
-      : audioStream;
+    const taggedStream = Object.assign(multimodalStream, {
+      type: 'MultimodalContent',
+      abort: () => {},
+    });
 
-    return new DataStreamWithMetadata(streamToReturn, {
-      elementType: 'Audio',
+    return new DataStreamWithMetadata(taggedStream as any, {
+      elementType: 'MultimodalContent',
       iteration: iteration,
       interactionId: nextInteractionId,
-      total_samples: accumulatedAudio.length,
+      total_samples: totalSamples,
       sample_rate: sampleRate,
       speech_detected: speechDetected,
       endpointing_latency_ms: endpointingLatency,
       stream_exhausted: isStreamExhausted,
-      interaction_complete: speechDetected && accumulatedAudio.length > 0,
+      interaction_complete: speechDetected && totalSamples > 0,
       // Store the completed interaction audio
       completed_audio: completedAudio,
     });
@@ -233,7 +226,7 @@ export class AudioStreamSlicerNode extends CustomNode {
    * @returns true if speech is detected, false otherwise
    */
   private async detectSpeech(audioChunk: {
-    data: Float32Array | number[];
+    data: Buffer;
     sampleRate: number;
   }): Promise<boolean> {
     if (!this.vad) {
@@ -241,24 +234,18 @@ export class AudioStreamSlicerNode extends CustomNode {
     }
 
     try {
-      // Convert to array if needed
-      const dataArray = Array.isArray(audioChunk.data)
-        ? audioChunk.data
-        : Array.from(audioChunk.data);
-
       const vadResult = await this.vad.detectVoiceActivity(
         {
-          data: dataArray,
+          data: audioChunk.data,
           sampleRate: audioChunk.sampleRate,
         },
-        this.speechThreshold,
+        { speechThreshold: this.speechThreshold },
       );
 
-      // Result is the sample index where speech is detected, or -1 if no speech
       return vadResult !== -1;
     } catch (error) {
       console.error('VAD detection failed:', error);
-      return false; // Assume no speech on error
+      return false;
     }
   }
 

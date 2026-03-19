@@ -1,4 +1,4 @@
-import { AudioChunkInterface } from '@inworld/runtime/common';
+import { AudioChunk } from '@inworld/runtime/primitives/speech';
 
 import { AudioStreamManager } from './components/audio_stream_manager';
 
@@ -39,7 +39,7 @@ export interface TextInput {
 
 export interface AudioInput {
   sessionId: string;
-  audio: AudioChunkInterface;
+  audio: AudioChunk;
   state: State;
   interactionId: string;
 }
