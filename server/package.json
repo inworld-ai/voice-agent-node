@@ -17,7 +17,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "@inworld/runtime": "1.0.2",
+    "@inworld/runtime": "1.0.5",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^5.2.0",
